@@ -1,0 +1,6 @@
+__pycache__/
+build/
+.cache/
+sdkconfig
+sdkconfig.old
+ca_key.pem
