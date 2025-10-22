@@ -4,3 +4,4 @@ build/
 sdkconfig
 sdkconfig.old
 ca_key.pem
+ca_cert.pem

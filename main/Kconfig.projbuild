@@ -69,7 +69,7 @@ menu "Over The Air Updates configuration"
   menu "Upgrade server"
       config FIRMWARE_UPG_URL
           string "Firmware Upgrade URL"
-          default "https://192.168.2.106:8070/binary.bin"
+          default "https://192.168.2.106:8070/esp32_secure_ota.bin"
           help
               URL of server which hosts the firmware image.
 
