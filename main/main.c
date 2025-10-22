@@ -1,12 +1,5 @@
-#include "esp_err.h"
-#include "ftp.c"
 #include "nvs_flash.h"
 #include "wifi.c"
-#include <esp_log.h>
-#include <esp_spiffs.h>
-#include <stdio.h>
-
-static const char *FS_TAG = "Filesystem setup";
 
 void app_main(void) {
   // ---- Wifi setup ---------------------------------------------------
