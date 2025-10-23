@@ -5,3 +5,14 @@ sdkconfig
 sdkconfig.old
 ca_key.pem
 ca_cert.pem
+
+# Latex
+documentation/*.aux
+documentation/*.auxlock
+documentation/*.fdb_latexmk
+documentation/*.fls
+documentation/*.log
+documentation/*.synctex.gz
+documentation/*.toc
+documentation/*.thm
+documentation/*.out

@@ -1,0 +1,207 @@
+\documentclass[a4paper]{article}
+
+\usepackage[italian]{babel}
+\usepackage{float}
+\usepackage{makecell}
+
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=false,
+}
+
+% Code blocks
+\usepackage{listings}
+\usepackage{xcolor}
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.95}
+
+\lstdefinestyle{mystyle}{
+	backgroundcolor=\color{backcolour},
+	commentstyle=\color{codegreen},
+	keywordstyle=\color{magenta},
+	numberstyle=\tiny\color{codegray},
+	stringstyle=\color{codepurple},
+	basicstyle=\ttfamily\footnotesize,
+	breakatwhitespace=false,
+	breaklines=true,
+	captionpos=b,
+	keepspaces=true,
+	numbers=left,
+	numbersep=5pt,
+	showspaces=false,
+	showstringspaces=false,
+	showtabs=false,
+	tabsize=2
+}
+
+\lstset{style=mystyle}
+
+\begin{document}
+
+\input{title.tex}
+
+\tableofcontents
+\pagebreak
+
+\section{Introduzione}
+Questo progetto consiste nell'implementazione di un sistema che permetta di aggiornare
+il firmware dell'ESP32 da remoto (Over The Air) tramite Wi-Fi. L'obiettivo principale è
+quello di attivare le funzionalità di sicurezza del microcontrollore in modo da proteggere
+il dispositivo da accessi non autorizzati. Le funzionalità di sicurezza includono:
+\begin{itemize}
+  \item \textbf{Secure OTA}: Garantisce che il nuovo firmware sia autentico e non
+    compromesso
+  \item \textbf{Secure Boot}: Impedisce l'esecuzione di firmware non autorizzato
+  \item \textbf{Flash Encryption}: Protegge i dati memorizzati nella memoria flash
+    del dispositivo
+\end{itemize}
+
+
+\section{Cenni teorici}
+
+\subsection{Aggiornamenti OTA (Over The Air)}
+Gli aggiornamenti OTA permettono di aggiornare il firmware del dispositivo durante la
+sua normale esecuzione, senza la necessità di collegarlo fisicamente a un computer. Le
+modalità di aggiornamento si distinguono in base alla vulnerabilità del sistema:
+\begin{itemize}
+  \item \textbf{Modalità sicura}: L'aggiornamento di alcune partizioni è resiliente,
+    cioè garantisce l'operabilità del dispositivo anche in caso di perdita di alimentazione
+    o di errore durante l'aggiornamento. Solo il seguente tipo di partizione supporta
+    la modalità sicura:
+    \begin{itemize}
+      \item \textbf{Application}: OTA configura la partition table in modo da avere
+        due partizioni per l'aggiornamento (\texttt{ota\_0} e \texttt{ota\_1}) e una
+        partizione per lo stato di boot (\texttt{ota\_data}). Durante l'aggiornamento il
+        nuovo firmware viene scritto nella partizione OTA attualmente non selezionata
+        per il boot. Una volta completato l'aggiornamento, la partizione \texttt{ota\_data}
+        viene aggiornata per indicare che la partizione OTA appena scritta deve essere
+        utilizzata al boot successivo. Se la partizione \texttt{ota\_data} non contiene
+        alcun dato il dispositivo esegue il boot dalla partizione \texttt{factory}.
+
+        La partition table con due partizioni OTA è la seguente:
+        \begin{lstlisting}
+# ESP-IDF Partition Table
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     0x9000,  0x4000,
+otadata,  data, ota,     0xd000,  0x2000,
+phy_init, data, phy,     0xf000,  0x1000,
+factory,  app,  factory, 0x10000,  1M,
+ota_0,    app,  ota_0,   0x110000, 1M,
+ota_1,    app,  ota_1,   0x210000, 1M,
+        \end{lstlisting}
+    \end{itemize}
+  \item \textbf{Modalità non sicura}: L'aggiornamento di alcune partizioni è vulnerabile,
+    cioè in caso di perdita di alimentazione o di errore durante l'aggiornamento il
+    dispositivo potrebbe non essere più operabile. Una partizione temporanea riceve
+    i dati della nuova immagine e, una volta completato il trasferimento, l'immagine viene
+    copiata nella partizione di destinazione. Se l'operazione di copia viene interrotta
+    potrebbero verificarsi problemi di boot. Le partizioni che supportano la modalità non
+    sicura sono:
+    \begin{itemize}
+      \item \textbf{Bootloader}
+      \item \textbf{Partition Table}
+      \item \textbf{Partizioni data} (ad esempio NVS, FAT, ecc...)
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Partizione OTA Data}
+Al primo avvio del dispositivo la partizione \texttt{ota\_data} deve essere vuota (tutti i
+byte a 0xFF) in modo da far eseguire il boot dal'applicazione nella partizione
+\texttt{factory}. Se l'applicazione in \texttt{factory} non è presente viene eseguito il boot
+della prima partizione OTA disponibile (di solito \texttt{ota\_0}).
+
+Dopo il primo aggiornamento OTA, la partizione \texttt{ota\_data} viene aggiornata per
+indicare quale partizione OTA deve essere utilizzata al successivo boot. La dimensione
+di \texttt{ota\_data} è di due settori (0x2000 bytes = 8192 bytes) in modo da evitare
+errori mentre si scrive la partizione. I due settori sono cancellati indipendentemente
+e scritti con gli stessi dati. In questo modo se i dati dei due settori non coincidono
+viene usato un counter per determinare quale settore è stato scritto più recentemente.
+
+\subsubsection{App rollback}
+L'obiettivo dell'app rollback è quello di tenere il funzionante il dispositivo dopo un
+aggiornamento e permette di tornare alla versione precedente del firmware se la nuova
+versione non funziona correttamente (solo le partizioni OTA possono effettuare il rollback).
+Dopo un aggiornamento OTA con rollback attivo si hanno le seguenti possibilità:
+\begin{itemize}
+  \item Se l'app funziona bene \texttt{esp\_ota\_mark\_app\_valid\_cancel\_rollback()}
+    imposta lo stato dell'applicazione a \texttt{ESP\_OTA\_IMG\_VALID}.
+
+  \item Se l'app non funziona correttamente il dispositivo esegue il rollback alla versione
+    precedente e \texttt{esp\_ota\_mark\_app\_invalid\_rollback()} imposta lo stato
+    dell'applicazione a \texttt{ESP\_OTA\_IMG\_INVALID}.
+
+  \item Se l'impostazione \texttt{CONFIG\_BOOTLOADER\_APP\_ROLLBACK\_ENABLE} è abilitata
+    e viene effettuato un reset, allora viene effettuato un rollback senza chiamare
+    nessuna funzione nell'applicazione. Questa opzione permette di intercettare la
+    prima esecuzione di una nuova applicazione per confermare che funzioni correttamente.
+\end{itemize}
+
+\vspace{1em}
+\noindent
+Gli stati che controllano il processo di selezione dell'applicazione sono:
+\begin{table}[H]
+  \centering
+  \begin{tabular}{|l|l|}
+    \hline
+    \textbf{Stato} & \textbf{Restrizioni sulla nuova app} \\
+    \hline
+    \texttt{ESP\_OTA\_IMG\_VALID} & Nessuna restrizione. Verrà selezionata \\
+    \hline
+    \texttt{ESP\_OTA\_IMG\_UNDEFINED} & Nessuna restrizione. Verrà selezionata \\
+    \hline
+    \texttt{ESP\_OTA\_IMG\_INVALID} & Non verrà selezionata \\
+    \hline
+    \texttt{ESP\_OTA\_IMG\_ABORTED} & Non verrà selezionata \\
+    \hline
+    \texttt{ESP\_OTA\_IMG\_NEW} & \makecell[l]{Se l'opzione \\
+    \texttt{CONFIG\_BOOTLOADER\_APP\_ROLLBACK\_ENABLE} \\
+    è abilitata, l'app verrà selezionata solo una \\
+    volta. Nel bootloader lo stato viene subito \\
+    impostato a \texttt{ESP\_OTA\_IMG\_PENDING\_VERIFY}.} \\
+    \hline
+      \texttt{ESP\_OTA\_IMG\_PENDING\_VERIFY} & \makecell[l]{Se l'opzione \\
+    \texttt{CONFIG\_BOOTLOADER\_APP\_ROLLBACK\_ENABLE} \\
+    è abilitata, l'app non verrà selezionata. \\
+    Nel bootloader lo stato viene \\
+    impostato a \\
+    \texttt{ESP\_OTA\_IMG\_ABORTED}.} \\
+    \hline
+  \end{tabular}
+\end{table}
+\noindent
+L'impostazione di questi stati avviene nei seguenti casi:
+\begin{itemize}
+  \item \texttt{ESP\_OTA\_IMG\_VALID}: impostato dalla funzione \\
+    \texttt{esp\_ota\_mark\_app\_valid\_cancel\_rollback()}.
+
+  \item \texttt{ESP\_OTA\_IMG\_UNDEFINED}: impostato dalla funzione \\
+    \texttt{esp\_ota\_set\_boot\_partition()} se l'impostazione \\
+    \texttt{CONFIG\_BOOTLOADER\_APP\_ROLLBACK\_ENABLE} è disabilitata.
+
+  \item \texttt{ESP\_OTA\_IMG\_NEW}: impostato dalla funzione \\
+    \texttt{esp\_ota\_set\_boot\_partition()} se l'impostazione \\
+    \texttt{CONFIG\_BOOTLOADER\_APP\_ROLLBACK\_ENABLE} è abilitata.
+
+  \item \texttt{ESP\_OTA\_IMG\_INVALID}: impostato dalla funzione \\
+    \texttt{esp\_ota\_mark\_app\_invalid\_rollback()} o \\
+    \texttt{esp\_ota\_mark\_app\_invalid\_rollback\_and\_reboot()}.
+
+  \item \texttt{ESP\_OTA\_IMG\_ABORTED}: impostato se l'operabilità dell'applicazione non
+    è stata confermata e avviene un reboot quando l'impostazione \\
+    \texttt{CONFIG\_BOOTLOADER\_APP\_ROLLBACK\_ENABLE} è abilitata.
+
+  \item \texttt{ESP\_OTA\_IMG\_PENDING\_VERIFY}: impostato nel bootloader se l'impostazione \\
+    \texttt{CONFIG\_BOOTLOADER\_APP\_ROLLBACK\_ENABLE} è abilitata e l'applicazione
+    selezionata è nello stato \texttt{ESP\_OTA\_IMG\_NEW}.
+\end{itemize}
+
+
+
+% \section{Cenni teorici}
+% \section{Implementazione}
+% \section{Analisi dei risultati}
+% \section{Conclusioni}
+
+\end{document}
