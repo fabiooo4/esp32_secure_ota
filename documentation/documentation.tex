@@ -3,6 +3,9 @@
 \usepackage[italian]{babel}
 \usepackage{float}
 \usepackage{makecell}
+\usepackage{csquotes}
+\usepackage[backend=biber]{biblatex}
+\addbibresource{./references.bib}
 
 \usepackage{hyperref}
 \hypersetup{
@@ -402,4 +405,9 @@ alla rete Wi-Fi e scaricare il nuovo firmware. I passi eseguiti sono i seguenti:
 % \section{Analisi dei risultati}
 % \section{Conclusioni}
 
+\nocite{*}
+\printbibliography[
+heading=bibintoc,
+title={Bibliografia}
+]
 \end{document}

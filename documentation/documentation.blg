@@ -1,0 +1,15 @@
+[0] Config.pm:308> INFO - This is Biber 2.20
+[0] Config.pm:311> INFO - Logfile is 'documentation.blg'
+[49] biber:340> INFO - === Sun Oct 26, 2025, 14:10:06
+[58] Biber.pm:420> INFO - Reading 'documentation.bcf'
+[97] Biber.pm:991> INFO - Using all citekeys in bib section 0
+[104] Biber.pm:4463> INFO - Processing section 0
+[110] Biber.pm:4654> INFO - Looking for bibtex file './references.bib' for section 0
+[111] bibtex.pm:1713> INFO - LaTeX decoding ...
+[112] bibtex.pm:1519> INFO - Found BibTeX data source './references.bib'
+[122] UCollate.pm:68> INFO - Overriding locale 'it-IT' defaults 'variable = shifted' with 'variable = non-ignorable'
+[122] UCollate.pm:68> INFO - Overriding locale 'it-IT' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[122] Biber.pm:4283> INFO - Sorting list 'nty/global//global/global/global' of type 'entry' with template 'nty' and locale 'it-IT'
+[122] Biber.pm:4289> INFO - No sort tailoring available for locale 'it-IT'
+[126] bbl.pm:676> INFO - Writing 'documentation.bbl' with encoding 'UTF-8'
+[126] bbl.pm:779> INFO - Output to documentation.bbl
