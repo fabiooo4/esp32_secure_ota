@@ -198,9 +198,207 @@ L'impostazione di questi stati avviene nei seguenti casi:
 \end{itemize}
 
 
+\section{Implementazione}
 
-% \section{Cenni teorici}
-% \section{Implementazione}
+\subsection{Aggiornamenti OTA}
+\subsubsection{Configurazione del progetto}
+Per abilitare gli aggiornamenti OTA è stato necessario configurare il progetto ESP-IDF
+con le seguenti componenti:
+\begin{itemize}
+  \item \textbf{Partition table e memoria flash}: è stato creato il file\\
+    \texttt{sdkconfig.defaults}
+    che contiene la configurazione di default del progetto. All'interno è stato
+    definito l'utilizzo della partition table con due partizioni OTA:
+\begin{lstlisting}
+CONFIG_PARTITION_TABLE_TWO_OTA=y
+\end{lstlisting}
+    e sono state impostate le dimensioni della memoria flash a 4MB:
+\begin{lstlisting}
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+\end{lstlisting}
+
+  \item \textbf{Server HTTP}: per permettere il download del nuovo firmware è stato
+    creato un server HTTP in \texttt{server/pytest\_simple\_ota.py} che rende
+    disponibile il file binario del firmware aggiornato.
+
+    Il server richiede, nella sua cartella, la presenza di un certificato SSL per
+    permettere connessioni sicure attraverso HTTPS. Il certificato è stato generato
+    eseguendo il seguente comando nella cartella \texttt{server/}:
+\begin{lstlisting}
+cd server
+openssl req -x509 -newkey rsa:2048 -keyout ca_key.pem -out ca_cert.pem -days 365 -nodes
+\end{lstlisting}
+    \textbf{Nota}: durante la creazione del certificato nel campo \texttt{Common Name (CN)}
+    deve essere inserito il nome host del server. Se il server viene eseguito in locale
+    il campo deve essere impostato con l'indirizzo IP del server.
+
+    Una volta generato il certificato bisogna flashare il file \texttt{ca\_cert.pem}
+    sul dispositivo in modo che possa verificare l'autenticità del server.
+    Per fare ciò bisogna copiare il file nella cartella \texttt{server\_certs/} del
+    progetto:
+\begin{lstlisting}
+cp ca_cert.pem ../server_certs
+\end{lstlisting}
+    Inoltre è necessario modificare il file \texttt{main/CMakeLists.txt} per includere
+    il certificato nel firmware:
+\begin{lstlisting}
+idf_build_get_property(project_dir PROJECT_DIR)
+idf_component_register(SRCS "main.c" INCLUDE_DIRS "."
+    EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem)
+\end{lstlisting}
+
+    Una volta configurato il tutto, il server può essere avviato eseguendo il comando:
+\begin{lstlisting}
+python pytest_simple_ota.py <BIN_DIR> <PORT> [CERT_DIR]
+\end{lstlisting}
+    Dove:
+    \begin{itemize}
+      \item \texttt{<BIN\_DIR>} è la cartella che contiene il file binario del firmware.
+      \item \texttt{<PORT>} è la  porta su cui eseguire il server HTTP.
+      \item \texttt{[CERT\_DIR]} (opzionale) è cartella che contiene il certificato SSL
+        del server. Se non viene specificata viene usata la cartella corrente.
+    \end{itemize}
+    Se tutto è andato a buon fine l'output del server sarà simile al seguente:
+\begin{lstlisting}
+$ python pytest_simple_ota.py build 8070
+Starting HTTPS server at "https://:8070"
+192.168.10.106 - - [01/Jan/2026 12:00:00] "GET /esp32_secure_ota.bin HTTP/1.1" 200 -
+\end{lstlisting}
+
+  \item \textbf{Supporto del versionamento}: per tenere traccia delle versioni del firmware
+    è stato aggiunto il file \texttt{version.txt} nella cartella principale del progetto
+    che contiene il numero di versione corrente. Questo numero viene inserito nel
+    file binario del firmware durante la compilazione e può essere letto dall'applicazione
+    per confrontare la versione corrente con quella disponibile sul server ed evitare
+    aggiornamenti non necessari.
+
+  \item \textbf{Accesso Wi-Fi}: per connettere il dispositivo alla rete Wi-Fi è stata
+    implementata la logica di connessione nel file \texttt{main/wifi.c}.
+
+  \item \textbf{Configurazione Wi-Fi e server HTTP}: per fornire le credenziali di
+    accesso alla rete Wi-Fi e l'indirizzo del server HTTP è stata creata una sezione
+    nel menu di configurazione del progetto (menuconfig), nel file
+    \texttt{main/Kconfig.projbuild}. Per accedere al menuconfig bisogna eseguire
+    il comando:
+\begin{lstlisting}
+idf.py menuconfig
+\end{lstlisting}
+    e navigare fino alla sezione \texttt{Over The Air Updates configuration} dove è
+    possibile impostare:
+    \begin{itemize}
+      \item \textbf{Wifi configuration}
+        \begin{itemize}
+          \item \texttt{SSID}: nome della rete Wi-Fi
+          \item \texttt{Password}: password della rete Wi-Fi
+          \item \texttt{Maximum retries}: numero massimo di tentativi di riconnessione
+          \item \texttt{WPA3 SAE mode selection}: modalità di autenticazione WPA3
+          \item \texttt{Password identifier}: identificatore della password WPA3
+          \item \texttt{WiFi Scan auth mode threshold}: modalità di
+            autenticazione minima accettata durante la scansione delle reti
+        \end{itemize}
+
+      \item \textbf{Upgrade server}
+        \begin{itemize}
+          \item \texttt{Firmware upgrade URL}: URL del server HTTP che ospita il file
+            binario del firmware. Deve essere nel formato:
+\begin{lstlisting}
+https://<host-ip-address>:<host-port>/<firmware-image-filename>
+\end{lstlisting}
+            dove:
+            \begin{itemize}
+              \item \texttt{<host-ip-address>}: hostname o indirizzo IP del server\\ HTTP.
+              \item \texttt{<host-port>}: porta su cui è in esecuzione il server HTTP.
+              \item \texttt{<firmware-image-filename>}: nome del file binario del\\ firmware.
+                \textbf{Deve coincidere con il nome del file messo a disposizione dal server}.
+            \end{itemize}
+
+          \item \texttt{Skip server certificate CN field check}: se abilitato, il
+            dispositivo non verificherà il campo \texttt{Common Name (CN)} del
+            certificato SSL. Utile per testare il server in locale senza dover generare
+            un certificato con l'indirizzo IP come CN.
+
+          \item \texttt{Skip firmware version check}: se abilitato, il dispositivo non
+            confronterà la versione del firmware corrente con quella disponibile sul
+            server prima di effettuare l'aggiornamento OTA.
+
+          \item \texttt{OTA recieve timeout}: tempo massimo (in millisecondi)
+            per ricevere una risposta dal server HTTP durante l'aggiornamento OTA.
+        \end{itemize}
+
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Connessione Wi-Fi}
+La connessione alla rete Wi-Fi viene gestita nel file \texttt{main/wifi.c} che
+fornisce la funzione \texttt{connect\_wifi()}. Questa funzione gestisce la connessione
+alla rete Wi-Fi utilizzando le credenziali fornite nel menuconfig e la riconnessione
+in caso di disconnessione. La funzione esegue i seguenti passaggi:
+\begin{enumerate}
+  \item Inizializza il driver Wi-Fi
+  \item Chiama un handler per gestire gli eventi di connessione e disconnessione 
+    dalla rete Wi-Fi
+  \item Chiama un handler per gestire l'acquisizione dell'indirizzo IP
+  \item Imposta il device in modalità stazione Wi-Fi con la configurazione fornita
+    dal menuconfig
+  \item Avvia la connessione alla rete Wi-Fi
+  \item Attende fino a quando il dispositivo non si connette alla rete o raggiunge
+    il numero massimo di tentativi di riconnessione
+  \item Restituisce lo stato della connessione (successo o fallimento)
+\end{enumerate}
+
+\subsubsection{Aggiornamento OTA}
+L'aggiornamento OTA viene gestito nel file \texttt{main/ota.c} che fornisce le funzione
+\texttt{download\_new\_firmware()} e \texttt{diagnose\_new\_firmware()}. La funzione
+\texttt{download\_new\_firmware()} connette il dispositivo al server HTTP e scarica
+il nuovo firmware, se disponibile, e lo imposta come nuova applicazione di boot.
+I passi eseguiti sono i seguenti:
+\begin{enumerate}
+  \item Recupera le partizioni di boot e OTA correnti
+  \item Si connette al server HTTP utilizzando l'URL fornito nel menuconfig
+  \item Recupera la partizione OTA non attualmente in uso per il boot
+  \item Legge il file binario del firmware dal server HTTP
+  \item Confronta la versione del firmware corrente con quella scaricata
+    \begin{itemize}
+      \item Se l'aggiornamento non è necessario viene eseguito un loop infinito
+        che attende un reset del dispositivo per ritentare l'aggiornamento
+    \end{itemize}
+  \item Inizializza l'aggiornamento OTA
+  \item Scrive i dati del firmware scaricato nella partizione OTA non in uso
+  \item Controlla che tutti i dati siano stati scritti correttamente
+  \item Disattiva l'aggiornamento OTA
+  \item Imposta la partizione OTA appena scritta come partizione di boot
+  \item Riavvia il dispositivo per eseguire il nuovo firmware
+\end{enumerate}
+
+\noindent
+La funzione \texttt{diagnose\_new\_firmware()} permette di verificare se il nuovo
+firmware funziona correttamente e, in caso negativo, effettua il rollback alla versione
+precedente. I passi eseguiti sono i seguenti:
+\begin{enumerate}
+  \item Controlla se l'applicazione corrente è al primo avvio dopo un aggiornamento OTA
+  \item Esegue la funzione di diagnosi del firmware (in questo caso un semplice delay di
+    5 secondi che simula un controllo)
+    \begin{itemize}
+      \item Se la diagnosi ha esito positivo, conferma che il nuovo firmware è valido
+        e cancella il rollback
+      \item Se la diagnosi ha esito negativo, marca il firmware come non valido
+        ed esegue il rollback alla versione precedente
+    \end{itemize}
+\end{enumerate}
+
+\subsubsection{Applicazione principale}
+L'applicazione principale si trova nel file \texttt{main/main.c} e utilizza le funzioni
+definite nei file \texttt{wifi.c} e \texttt{ota.c} per connettere il dispositivo
+alla rete Wi-Fi e scaricare il nuovo firmware. I passi eseguiti sono i seguenti:
+\begin{enumerate}
+  \item Controlla il nuovo firmware tramite la funzione \texttt{diagnose\_new\_firmware()}
+  \item Si connette alla rete Wi-Fi tramite la funzione \texttt{connect\_wifi()}
+  \item Crea una task per gestire l'aggiornamento OTA chiamando la funzione
+    \texttt{download\_new\_firmware()}
+  \item Crea una task per eseguire l'applicazione principale (in questo caso un semplice
+    loop che stampa un messaggio ogni 5 secondi)
+\end{enumerate}
+
 % \section{Analisi dei risultati}
 % \section{Conclusioni}
 

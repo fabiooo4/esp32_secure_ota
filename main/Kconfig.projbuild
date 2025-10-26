@@ -26,7 +26,7 @@ menu "Over The Air Updates configuration"
       endchoice
 
       config ESP_WIFI_PW_ID
-          string "PASSWORD IDENTIFIER"
+          string "Password Identifier"
           depends on  ESP_WPA3_SAE_PWE_HASH_TO_ELEMENT|| ESP_WPA3_SAE_PWE_BOTH
           default ""
           help
@@ -74,7 +74,7 @@ menu "Over The Air Updates configuration"
               URL of server which hosts the firmware image.
 
       config SKIP_COMMON_NAME_CHECK
-          bool "Skip server certificate CN fieldcheck"
+          bool "Skip server certificate CN field check"
           default n
           help
               This allows you to skip the validation of OTA server certificate CN field.
@@ -89,7 +89,7 @@ menu "Over The Air Updates configuration"
           int "OTA Receive Timeout"
           default 5000
           help
-              Maximum time for reception
+              Maximum time for reception in milliseconds
   endmenu
 
 endmenu

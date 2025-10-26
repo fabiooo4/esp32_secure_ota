@@ -30,9 +30,6 @@ and Flash Encryption
 
 # Configuration
 
-- [FTP Client configuration](#ftp-client-configuration)
-- [Default configuration](#default-configuration)
-
 The project is configured using the ESP-IDF menuconfig tool. To open the
 configuration menu, run the following command:
 

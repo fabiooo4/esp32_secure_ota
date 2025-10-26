@@ -45,6 +45,8 @@ static void http_cleanup(esp_http_client_handle_t client) {
 // For testing, the app is always considered valid
 static bool diagnostic(void) {
   bool diagnostic_is_ok = true;
+  ESP_LOGI(OTA_TAG, "Running diagnostics ...");
+  vTaskDelay(5000 / portTICK_PERIOD_MS);
   return diagnostic_is_ok;
 }
 
