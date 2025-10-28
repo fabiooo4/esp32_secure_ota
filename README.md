@@ -5,7 +5,7 @@ and Flash Encryption
 
 ## Prerequisites
 
-- ESP32 development board
+- ESP32 development board with revision v3.1 or later
 - [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/v5.4.1/esp32/get-started/index.html#ide) v5.4.1 or later
 
 ## Installation
@@ -133,7 +133,3 @@ image package containing version data is received. The application version is ob
 
 In this project, ``$PROJECT_PATH/version.txt`` is used to define the app version.
 Change the version in the file to compile the new firmware.
-
-# References
-
-- [Over The Air Updates Docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/ota.html)

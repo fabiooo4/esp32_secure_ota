@@ -172,6 +172,7 @@ Gli stati che controllano il processo di selezione dell'applicazione sono:
     \texttt{ESP\_OTA\_IMG\_ABORTED}.} \\
     \hline
   \end{tabular}
+  \caption{Stati dell'applicazione OTA}
 \end{table}
 \noindent
 L'impostazione di questi stati avviene nei seguenti casi:
@@ -200,6 +201,233 @@ L'impostazione di questi stati avviene nei seguenti casi:
     selezionata è nello stato \texttt{ESP\_OTA\_IMG\_NEW}.
 \end{itemize}
 
+\subsection{eFuse}
+TODO
+
+\subsection{Secure Boot}
+Il Secure Boot protegge il dispositivo dall'esecuzione di firmware non autorizzato
+verificando che ogni software (second stage bootloader e ogni applicazione)
+che viene eseguito sia firmato. Il first stage bootloader non deve essere firmato
+in quanto è memorizzato in una memoria ROM (di sola lettura).
+La firma è una coppia di chiavi (privata e pubblica) generata tramite l'algoritmo
+RSA.
+\begin{itemize}
+  \item La chiave privata viene utilizzata per firmare il software prima
+    che venga caricato nel dispositivo.
+  \item La chiave pubblica viene memorizzata nel dispositivo e viene utilizzata
+    per verificare la firma del software prima che venga eseguito.
+\end{itemize}
+
+\noindent
+In breve, il processo
+di Secure Boot funziona come segue:
+\begin{enumerate}
+  \item Il first stage bootloader carica il second stage bootloader e ne verifica la firma.
+    Solo se la verifica va a buon fine il second stage bootloader viene eseguito.
+  \item Il second stage bootloader carica l'applicazione e ne verifica la firma.
+    Solo se la verifica va a buon fine l'applicazione viene eseguita.
+\end{enumerate}
+
+\subsubsection{Vantaggi}
+I vantaggi del Secure Boot sono:
+\begin{itemize}
+  \item La chiave pubblica è memorizzata sul dispositivo, mentre quella privata è 
+    tenuta in un posto sicuro e non viene mai usata dal dispositivo.
+
+  \item Solo una chiave pubblica può essere generata e memorizzata nel chip
+    durante la fase di produzione.
+
+  \item Viene usato lo stesso formato di immagine del firmware e della firma sia
+    per il second stage bootloader che per le applicazioni.
+
+  \item Nessun dato segreto viene memorizzato nel dispositivo.
+\end{itemize}
+
+\subsubsection{Formato del signature block}
+Il signature block è una struttura che contiene la firma del software.
+Il blocco inizia su un confine allineato a 4 KB e ha un proprio settore di flash,
+cioè 4096 byte. La firma viene calcolata su \textbf{tutti i byte} dell'immagine,
+inclusi i byte di "secure padding" (vedi capitolo \ref{Secure padding}).
+Ogni signature block contiene la firma dell'immagine a cui appartiene insieme alla
+chiave pubblica RSA usata per la verifica della firma.
+Il formato del signature block è il seguente:
+\begin{table}[H]
+  \centering
+  \begin{tabular}{|l|l|l|}
+    \hline
+    \textbf{Offset} & \textbf{Dimensione (byte)} & \textbf{Descrizione} \\
+    \hline
+      0 & 1 & Byte magico (deve essere \texttt{0xE7})\\
+    \hline
+      1 & 1 & \makecell[l]{
+        Byte della versione,\\
+        per Secure Boot v2 è \texttt{0x02}
+      } \\
+    \hline
+      2 & 2 &
+      \makecell[l]{
+        Byte di padding.\\
+        Riservati e devono essere a 0
+      } \\
+    \hline
+      4 & 32 & \makecell[l]{
+        Hash SHA-256 del contenuto \\
+        dell'immagine, senza considerare \\
+        il signature block
+      } \\
+    \hline
+      36 & 384 & \makecell[l]{
+        Modulo RSA usato per la verifica \\
+        della firma. \\
+        (valore \texttt{"n"} nella specifica
+        \href{https://www.rfc-editor.org/rfc/rfc8017.html}{RFC8017})
+      } \\
+    \hline
+      420 & 4 & \makecell[l]{
+        Esponente pubblico RSA usato \\
+        per la verifica della firma. \\
+        (valore \texttt{"e"} nella specifica
+        \href{https://www.rfc-editor.org/rfc/rfc8017.html}{RFC8017})
+      } \\
+    \hline
+      424 & 384 & \makecell[l]{
+        Valore precalcolato di \texttt{"R"}, derivato da \\
+        \texttt{"n"}, usato per l'algoritmo di \\
+        moltiplicazione di Montgomery
+      } \\
+    \hline
+      808 & 4 & \makecell[l]{
+        Valore precalcolato di \texttt{"M'"}, derivato da \\
+        \texttt{"n"}, usato per l'algoritmo di \\
+        moltiplicazione di Montgomery
+      } \\
+    \hline
+      812 & 384 & \makecell[l]{
+        Firma RSA-PSS \\
+        (sezione 8.1.1 della \href{https://www.rfc-editor.org/rfc/rfc8017.html}{RFC8017})
+        del \\ contenuto dell'immagine, calcolata \\ usando i seguenti
+        parametri PSS: \\ hash SHA-256, funzione MGF1, \\ lunghezza
+        del salt 32 bytes, campo trailer \\ di default 0xBC.
+      } \\
+    \hline
+      1196 & 4 & \makecell[l]{
+        CRC32 (checksum) dei precedenti 1196 \\ bytes
+      } \\
+    \hline
+      1200 & 16 & \makecell[l]{
+        Byte di padding a 0 per arrivare a \\ lunghezza 1216 bytes
+      } \\
+    \hline
+  \end{tabular}
+  \caption{Formato del signature block}
+\end{table}
+\noindent
+Lo spazio rimanente dopo il signature block (4096 - 1216 = 2880 bytes) è memoria
+flash cancellata, cioè tutti i byte a 0xFF, che può essere usata per scrivere altri
+signature block dopo il precedente.
+
+\vspace{1em}
+\label{Verifica del signature block}
+\noindent
+Un signature block è valido se soddisfa entrambe le condizioni:
+\begin{itemize}
+  \item Il byte magico è corretto (\texttt{0xE7})
+  \item La checksum CRC32 è corretta
+\end{itemize}
+altrimenti viene considerato non valido.
+
+\subsubsection{Secure padding} \label{Secure padding}
+Il secure padding è un'area di memoria che viene aggiunta alla fine di ogni
+immagine del firmware per allineare l'immagine al confine della dimensione di pagina
+della flash MMU (Memory Management Unit con dimensione default di 64KB).
+Questo viene fatto per assicurare che soltanto
+contenuti verificati vengano mappati nella memoria indirizzabile del dispositivo.
+La firma dell'immagine viene calcolata dopo aver aggiunto il secure padding e solo
+dopo viene aggiunto alla fine il signature block (4KB).
+
+
+\subsubsection{Verifica di un'immagine}
+Un esempio di applicazione firmata è il seguente:
+\begin{table}[H]
+  \centering
+  \begin{tabular}{|l|l|l|}
+    \hline
+    \textbf{Offset} & \textbf{Dimensione (KB)} & \textbf{Descrizione} \\
+    \hline
+    0 & 580 & \makecell[l]{
+      Contenuto di esempio di un'applicazione \\ non firmata
+    } \\
+    \hline
+    580 & 60 & \makecell[l]{
+      Secure padding per allineare l'immagine \\ al prossimo confine di 64KB
+    } \\
+    \hline
+    640 & 4 & Signature block \\
+    \hline
+  \end{tabular}
+  \caption{Esempio di applicazione firmata}
+\end{table}
+\noindent
+L'immagine dell'applicazione inizia sempre al prossimo confine di pagina della flash MMU,
+di default 64KB, e quindi lo spazio rimanente dopo il signature block può essere
+utilizzato per memorizzare altre partizioni di dati, ad esempio \texttt{nvs}.
+
+\vspace{1em}
+\label{Verifica di un'immagine}
+\noindent
+Un'immagine è verificata se la chiave pubblica memorizzata in qualsiasi signature block
+è valida per quel dispositivo, e se la firma RSA-PSS nel signature block coincide con
+la firma calcolata per i dati dell'immagine letti dalla flash.
+La verifica dell'immagine non viene effettuata soltanto ad ogni boot, ma anche dopo
+ogni aggiornamento OTA. Se la verifica della nuova immagine ottenuta tramite OTA
+fallisce, il bootloader cercherà un'altra immagine valida da eseguire.
+I passaggi per verificare un'immagine sono i seguenti:
+\begin{enumerate}
+  \item Confrontare l'hash SHA-256 della chiave pubblica memorizzata nel signature block
+    del bootloader con quello memorizzato negli \texttt{eFuse} del dispositivo.
+    Se non coincidono, l'immagine non è valida.
+
+  \item Generare l'hash dell'immagine dell'applicazione e confrontarlo con l'hash
+    memorizzato nel signature block dell'immagine. Se non coincidono, l'immagine
+    non è valida.
+
+  \item Usare la chiave pubblica per verificare la firma dell'immagine del bootloader
+    usando RSA-PSS (sezione 8.1.2 della \href{https://www.rfc-editor.org/rfc/rfc8017.html}{RFC8017})
+    per confrontarla con l'hash dell'immagine calcolato nel passo 2.
+\end{enumerate}
+
+\subsubsection{Processo di Secure Boot}
+I passi eseguiti durante il processo di Secure Boot sono i seguenti:
+\begin{enumerate}
+  \item All'avvio, il codice salvato in ROM (first stage bootloader) controlla
+    il bit di Secure Boot v2 negli \texttt{eFuse} del dispositivo. Se il bit è
+    disabilitato, il dispositivo esegue il boot normalmente, altrimenti procede al
+    passo successivo.
+
+  \item Il codice in ROM verifica il signature block del bootloader
+    (vedi \ref{Verifica del signature block}). Se fallisce
+    il processo di boot viene interrotto. 
+
+  \item Il codice in ROM verifica l'immagine del bootloader usando i dati dell'immagine,
+    i signature block corrispondenti e gli \texttt{eFuse} (vedi \ref{Verifica di un'immagine}).
+    Se la verifica fallisce il processo di boot viene interrotto.
+
+  \item Il codice in ROM esegue il bootloader.
+
+  \item Il bootloader verifica il signature block dell'immagine dell'applicazione.
+    Se fallisce il processo di boot viene interrotto. \label{Verifica del signature block app}
+
+  \item Il bootloader verifica l'immagine dell'applicazione usando i dati dell'immagine,
+    i signature block corrispondenti e gli \texttt{eFuse}.
+    Se la verifica fallisce il processo di boot viene interrotto, ma se viene trovata
+    un'altra immagine, allora il bootloader proverà a verificare quell'immagine tornando
+    ad eseguire i punti dal \ref{Verifica del signature block app} al
+    \ref{Esecuzione dell'applicazione verificata}. Questo viene ripetuto finchè non viene
+    trovata un'immagine valida o non ci sono più immagini da verificare.
+
+  \item \label{Esecuzione dell'applicazione verificata}
+    Il bootloader esegue l'immagine dell'applicazione verificata.
+\end{enumerate}
 
 \section{Implementazione}
 

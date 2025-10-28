@@ -16,3 +16,6 @@ documentation/*.synctex.gz
 documentation/*.toc
 documentation/*.thm
 documentation/*.out
+documentation/*.bbl*
+documentation/*.bcf*
+documentation/*.run.xml
