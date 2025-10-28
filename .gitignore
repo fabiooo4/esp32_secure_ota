@@ -17,5 +17,6 @@ documentation/*.toc
 documentation/*.thm
 documentation/*.out
 documentation/*.bbl*
+documentation/*.blg
 documentation/*.bcf*
 documentation/*.run.xml
