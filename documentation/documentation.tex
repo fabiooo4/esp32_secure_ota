@@ -202,7 +202,24 @@ L'impostazione di questi stati avviene nei seguenti casi:
 \end{itemize}
 
 \subsection{eFuse}
-TODO
+Gli \texttt{eFuse} (electronic fuses) sono memorie non volatili che possono essere
+programmate (burned) una sola volta. Gli \texttt{eFuse} sono campi da \textbf{un bit}
+che può essere impostato a 1, ma non può essere riportatoo a 0 e servono per memorizzare
+valori di sistema o dell'utente. I bit sono raggruppati in 4 blocchi da 256 bit e 
+ogni blocco è suddiviso in 8 registri da 32 bit. Alcuni blocchi sono riservati per i
+valori di sistema e altri sono liberi per l'uso dell'utente.
+I blocchi degli \texttt{eFuse} sono divisi in:
+\begin{itemize}
+  \item \texttt{EFUSE\_BLK0}: è interamente riservato ai valori di sistema
+  \item \texttt{EFUSE\_BLK1}: è utilizzato per le chiavi della Flash Encryption se
+    attivata, altrimenti può essere usato dall'utente
+  \item \texttt{EFUSE\_BLK2}: è utilizzato per la chiave del Secure Boot se attivo,
+    altrimenti può essere usato dall'utente
+  \item \texttt{EFUSE\_BLK3}: può essere riservato per memorizzare un indirizzo MAC
+    personalizzato oppure può essere usato dall'utente. Alcuni bit sono già usati
+    in ESP-IDF.
+\end{itemize}
+Non tutti i bit possono essere utilizzati.
 
 \subsection{Secure Boot}
 Il Secure Boot protegge il dispositivo dall'esecuzione di firmware non autorizzato
