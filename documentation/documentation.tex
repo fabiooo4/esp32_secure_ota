@@ -5,6 +5,7 @@
 \usepackage{makecell}
 \usepackage{csquotes}
 \usepackage[backend=biber]{biblatex}
+\emergencystretch=1.5em
 \addbibresource{./references.bib}
 
 \usepackage{hyperref}
@@ -553,6 +554,22 @@ bootloader sia stato compilato per supportare la flash encryption, il processo d
     della memoria flash e caricare i contenuti decrittografati nella memoria IRAM
     (Instruction RAM).
 \end{enumerate}
+
+\subsubsection{Modalità di sviluppo e di rilascio}
+Durante la fase di sviluppo è necessario poter flashare più volte il dispositivo,
+con diverse immagini non crittografate per testare il processo di crittografia, di
+conseguenza la modalità Firmware Download deve essere attivata. Questa modalità però
+dovrebbe essere disabilitata nella versione finale del prodotto per impedire ulteriore
+accesso alla memoria flash.
+Per questo motivo esistono due modalità di funzionamento della Flash Encryption:
+\begin{itemize}
+  \item \textbf{Development mode}: In questa modalità è possibile flashare nuove immagini
+    non crittografate sul dispositivo e il bootloader le crittograferà utilizzando
+    la chiave memorizzata nell'hardware. Questo però permette, indirettamente, di
+    leggere i contenuti in chiaro dell'immagine in memoria flash.
+  \item \textbf{Release mode}: In questa modalità non è più possibile flashare nuove
+    immagini sul dispositivo senza conoscere la chiave di crittografia.
+\end{itemize}
 
 \section{Implementazione}
 
