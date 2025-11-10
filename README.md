@@ -102,7 +102,7 @@ For example, in the `server/` directory:
 python pytest_simple_ota.py . 8070
 ```
 
-## Internal workflow of the OTA Example
+## Internal workflow of the OTA Updates
 
 After booting, the firmware:
 
@@ -117,7 +117,6 @@ If you want to rollback to the `factory` app after the upgrade (or to the first 
 
 This feature allows you to roll back to a previous firmware if new image is not usable. The menuconfig option
 `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` allows you to track the first boot of the application.
-The ``native_ota_example`` contains code to demonstrate how a rollback works.
 
 ## Support for Versioning of Applications
 

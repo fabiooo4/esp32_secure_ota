@@ -61,8 +61,6 @@ static void wait_for_new_fiwmware(void) {
   }
 }
 
-// Download and write new firmware to the OTA partition from the configured HTTP
-// server
 void download_new_firmware(void *pvParameter) {
   esp_err_t err;
   // Handle set by esp_ota_begin(), must be freed via esp_ota_end()
@@ -185,7 +183,7 @@ void download_new_firmware(void *pvParameter) {
             }
           }
 
-#ifndef CONFIG_EXAMPLE_SKIP_VERSION_CHECK
+#ifndef CONFIG_SKIP_VERSION_CHECK
           if (memcmp(new_app_info.version, running_app_info.version,
                      sizeof(new_app_info.version)) == 0) {
             ESP_LOGW(OTA_TAG, "Current running version is the same as a new. We "
@@ -276,12 +274,10 @@ void download_new_firmware(void *pvParameter) {
   esp_restart();
   return;
 }
-// Check if the new firmware works as expected on first boot.
-// If yes, mark app as valid to avoid rollback.
-// If not, rollback to previous version.
-void diagnose_new_firmware(void) {
+
+void diagnose_new_firmware() {
   uint8_t sha_256[HASH_LEN] = {0};
-  esp_partition_t partition;
+  esp_partition_t partition = {0};
 
   // Get sha256 digest for the partition table
   partition.address = ESP_PARTITION_TABLE_OFFSET;

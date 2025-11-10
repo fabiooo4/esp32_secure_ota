@@ -1,11 +1,12 @@
-#include "ota.c"
-#include "wifi.c"
-
+#include "freertos/FreeRTOS.h"
 #include "esp_log.h"
 #include "freertos/task.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include <string.h>
+
+#include "ota.h"
+#include "wifi.h"
 
 static const char *APP_TAG = "APP";
 

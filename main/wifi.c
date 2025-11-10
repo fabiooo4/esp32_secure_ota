@@ -1,4 +1,4 @@
-#include "esp_err.h"
+#include "wifi.h"
 #include "esp_event.h"
 #include "esp_event_base.h"
 #include "esp_log.h"
@@ -52,12 +52,6 @@
 #define EXAMPLE_H2E_IDENTIFIER CONFIG_ESP_WIFI_PW_ID
 #endif
 // -----------------------------------------------------------------
-
-#define WIFI_SUCCESS BIT0
-#define WIFI_FAILURE BIT1
-
-// Task tag
-static const char *WIFI_TAG = "WIFI";
 
 // Event status
 static EventGroupHandle_t wifi_event_group;
