@@ -32,11 +32,12 @@ menu "Over The Air Updates configuration"
           help
               password identifier for SAE H2E
 
-      config ESP_MAX_RETRY
-          int "Maximum retry"
+      config ESP_WIFI_RETRY_INTERVAL
+          int "Retry interval (in seconds)"
           default 5
           help
-              Set the Maximum retry to avoid station reconnecting to the AP unlimited when the AP is really inexistent.
+              Interval between connection retries if connection fails or is lost.
+              Value is in seconds.
 
       choice ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD
           prompt "WiFi Scan auth mode threshold"

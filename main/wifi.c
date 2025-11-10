@@ -16,12 +16,6 @@
 #include <string.h>
 
 // ---- Wifi menuconfig ------------------------------------
-#define WIFI_SSID CONFIG_ESP_WIFI_SSID
-#define WIFI_PASS CONFIG_ESP_WIFI_PASSWORD
-
-// Max number of connection retries
-#define MAX_RETRY CONFIG_ESP_MAX_RETRY
-
 #if CONFIG_ESP_WIFI_AUTH_OPEN
 #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_OPEN
 #elif CONFIG_ESP_WIFI_AUTH_WEP
@@ -56,9 +50,6 @@
 // Event status
 static EventGroupHandle_t wifi_event_group;
 
-// Current number of retries
-static int s_retry_num;
-
 /* Wifi Handlers */
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data) {
@@ -67,13 +58,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     esp_wifi_connect();
   } else if (event_base == WIFI_EVENT &&
              event_id == WIFI_EVENT_STA_DISCONNECTED) {
-    if (s_retry_num < MAX_RETRY) {
-      ESP_LOGI(WIFI_TAG, "Reconnecting to AP");
-      esp_wifi_connect();
-      s_retry_num++;
-    } else {
-      xEventGroupSetBits(wifi_event_group, WIFI_FAILURE);
-    }
+    ESP_LOGI(WIFI_TAG, "Disconnected, reconnecting to AP");
+    esp_wifi_connect();
+    vTaskDelay(CONFIG_ESP_WIFI_RETRY_INTERVAL * 1000 / portTICK_PERIOD_MS);
   }
 }
 
@@ -82,8 +69,6 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
   if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     ESP_LOGI(WIFI_TAG, "Station IP: " IPSTR, IP2STR(&event->ip_info.ip));
-
-    s_retry_num = 0;
 
     xEventGroupSetBits(wifi_event_group, WIFI_SUCCESS);
   }
@@ -125,8 +110,8 @@ esp_err_t connect_wifi() {
 
   /* Wifi config */
   wifi_config_t wifi_config = {
-      .sta = {.ssid = WIFI_SSID,
-              .password = WIFI_PASS,
+      .sta = {.ssid = CONFIG_ESP_WIFI_SSID,
+              .password = CONFIG_ESP_WIFI_PASSWORD,
               .threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD,
               .sae_pwe_h2e = ESP_WIFI_SAE_MODE,
               .sae_h2e_identifier = EXAMPLE_H2E_IDENTIFIER,
