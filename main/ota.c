@@ -78,13 +78,10 @@ void download_new_firmware(void *pvParameter) {
     esp_http_client_config_t config = {
         .url = CONFIG_FIRMWARE_UPG_URL,
         .cert_pem = (char *)server_cert_pem_start,
+        .skip_cert_common_name_check = true,
         .timeout_ms = CONFIG_OTA_RECV_TIMEOUT,
         .keep_alive_enable = true,
     };
-
-#ifdef CONFIG_SKIP_COMMON_NAME_CHECK
-    config.skip_cert_common_name_check = true;
-#endif
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (client == NULL) {
@@ -101,7 +98,8 @@ void download_new_firmware(void *pvParameter) {
     if (err != ESP_OK) {
       ESP_LOGE(OTA_TAG,
                "Failed to open HTTP connection with the firmware upgrade "
-               "server: %s",
+               "server (%s): %s",
+               CONFIG_FIRMWARE_UPG_URL,
                esp_err_to_name(err));
       ESP_LOGE(OTA_TAG, "Retrying in %ds...", CONFIG_OTA_RETRY_INTERVAL);
       esp_http_client_cleanup(client);
@@ -114,9 +112,6 @@ void download_new_firmware(void *pvParameter) {
 
     update_partition = esp_ota_get_next_update_partition(NULL);
     assert(update_partition != NULL);
-
-    ESP_LOGI(OTA_TAG, "Writing to partition subtype %d at offset 0x%" PRIx32,
-             update_partition->subtype, update_partition->address);
 
     // Handle recieved packet
     int binary_file_length = 0;
@@ -216,6 +211,10 @@ void download_new_firmware(void *pvParameter) {
             image_header_was_checked = true;
 
             // ---- Begin OTA segment write to partition -----------------------
+            ESP_LOGI(OTA_TAG,
+                     "Writing to partition subtype %d at offset 0x%" PRIx32,
+                     update_partition->subtype, update_partition->address);
+
             err = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES,
                                 &update_handle);
             if (err != ESP_OK) {
@@ -261,6 +260,9 @@ void download_new_firmware(void *pvParameter) {
     } else if (ota_wait_new_version) {
       ESP_LOGI(OTA_TAG, "No new firmware version available. Retrying in %ds...",
                CONFIG_OTA_RETRY_INTERVAL);
+
+      http_cleanup(client);
+
       vTaskDelay(retry_delay_ms / portTICK_PERIOD_MS);
       continue;
     }
@@ -312,6 +314,10 @@ void download_new_firmware(void *pvParameter) {
     // Apply the update
     ESP_LOGI(OTA_TAG, "Prepare to restart system!");
     http_cleanup(client);
+
+    ESP_LOGI(OTA_TAG, "Waiting for network stack to clean up...");
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
+
     esp_restart();
     return;
   }

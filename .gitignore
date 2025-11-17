@@ -1,4 +1,3 @@
-__pycache__/
 build/
 .cache/
 sdkconfig
@@ -20,3 +19,6 @@ documentation/*.bbl*
 documentation/*.blg
 documentation/*.bcf*
 documentation/*.run.xml
+
+# Rust
+target/

@@ -1,7 +1,7 @@
-#include "freertos/FreeRTOS.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -55,8 +55,9 @@ void app_main(void) {
 
   xTaskCreate(&download_new_firmware, "download_new_firmware", 8192, NULL, 5,
               NULL);
-  xTaskCreate(&application, "application", 2048, NULL, 5, NULL);
+  xTaskCreate(&application, "application", 4096, NULL, 5, NULL);
 
-  // Free main task
-  vTaskDelete(NULL);
+  while (1) {
+    vTaskDelay(10000 / portTICK_PERIOD_MS);
+  }
 }
