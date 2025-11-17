@@ -6,6 +6,7 @@
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_system.h"
+#include "sdkconfig.h"
 #include <inttypes.h>
 
 #define BUFFSIZE 1024
@@ -27,15 +28,6 @@ static void print_sha256(const uint8_t *image_hash, const char *label) {
   ESP_LOGI(OTA_TAG, "%s: %s", label, hash_print);
 }
 
-static void __attribute__((noreturn)) task_fatal_error(void) {
-  ESP_LOGE(OTA_TAG, "Exiting task due to fatal error...");
-  (void)vTaskDelete(NULL);
-
-  while (1) {
-    ;
-  }
-}
-
 static void http_cleanup(esp_http_client_handle_t client) {
   esp_http_client_close(client);
   esp_http_client_cleanup(client);
@@ -50,229 +42,279 @@ static bool diagnostic(void) {
   return diagnostic_is_ok;
 }
 
-// Infinite loop until a new firmware is available (simulated here by
-// pressing the reset button)
-static void wait_for_new_fiwmware(void) {
-  ESP_LOGI(OTA_TAG, "When a new firmware is available on the server, press the "
-                "reset button to download it");
-  while (1) {
-    // ESP_LOGI(OTA_TAG, "Waiting for a new firmware ...");
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
-  }
-}
-
+// Task to download new firmware from HTTP server
+// Runs every CONFIG_OTA_RETRY_INTERVAL seconds
 void download_new_firmware(void *pvParameter) {
-  esp_err_t err;
-  // Handle set by esp_ota_begin(), must be freed via esp_ota_end()
-  esp_ota_handle_t update_handle = 0;
-  const esp_partition_t *update_partition = NULL;
-
+  const int retry_delay_ms = CONFIG_OTA_RETRY_INTERVAL * 1000;
   ESP_LOGI(OTA_TAG, "Starting new firmware download task");
+  while (1) {
+    esp_err_t err;
 
-  // ---- Check current partition --------------------------------------
-  const esp_partition_t *configured = esp_ota_get_boot_partition();
-  const esp_partition_t *running = esp_ota_get_running_partition();
+    // Handle set by esp_ota_begin(), must be freed via esp_ota_end()
+    esp_ota_handle_t update_handle = 0;
+    const esp_partition_t *update_partition = NULL;
 
-  if (configured != running) {
-    ESP_LOGW(OTA_TAG,
-             "Configured OTA boot partition at offset 0x%08" PRIx32
-             ", but running from offset 0x%08" PRIx32,
-             configured->address, running->address);
-    ESP_LOGW(OTA_TAG, "(This can happen if either the OTA boot data or preferred "
-                  "boot image become corrupted somehow.)");
-  }
-  ESP_LOGI(OTA_TAG, "Running partition type %d subtype %d (offset 0x%08" PRIx32 ")",
-           running->type, running->subtype, running->address);
-  // ---- Check current partition --------------------------------------
+    ESP_LOGI(OTA_TAG, "Attempting to download new firmware...");
 
-  // ---- Connect to HTTP server ---------------------------------------
-  esp_http_client_config_t config = {
-      .url = CONFIG_FIRMWARE_UPG_URL,
-      .cert_pem = (char *)server_cert_pem_start,
-      .timeout_ms = CONFIG_OTA_RECV_TIMEOUT,
-      .keep_alive_enable = true,
-  };
+    // ---- Check current partition --------------------------------------
+    const esp_partition_t *configured = esp_ota_get_boot_partition();
+    const esp_partition_t *running = esp_ota_get_running_partition();
+
+    if (configured != running) {
+      ESP_LOGW(OTA_TAG,
+               "Configured OTA boot partition at offset 0x%08" PRIx32
+               ", but running from offset 0x%08" PRIx32,
+               configured->address, running->address);
+      ESP_LOGW(OTA_TAG,
+               "(This can happen if either the OTA boot data or preferred "
+               "boot image become corrupted somehow.)");
+    }
+    ESP_LOGI(OTA_TAG,
+             "Running partition type %d subtype %d (offset 0x%08" PRIx32 ")",
+             running->type, running->subtype, running->address);
+    // ---- Check current partition --------------------------------------
+
+    // ---- Connect to HTTP server ---------------------------------------
+    esp_http_client_config_t config = {
+        .url = CONFIG_FIRMWARE_UPG_URL,
+        .cert_pem = (char *)server_cert_pem_start,
+        .timeout_ms = CONFIG_OTA_RECV_TIMEOUT,
+        .keep_alive_enable = true,
+    };
 
 #ifdef CONFIG_SKIP_COMMON_NAME_CHECK
-  config.skip_cert_common_name_check = true;
+    config.skip_cert_common_name_check = true;
 #endif
 
-  esp_http_client_handle_t client = esp_http_client_init(&config);
-  if (client == NULL) {
-    ESP_LOGE(OTA_TAG, "Failed to initialise HTTP connection with the firmware upgrade server");
-    task_fatal_error();
-  }
-  err = esp_http_client_open(client, 0);
-  if (err != ESP_OK) {
-    ESP_LOGE(OTA_TAG, "Failed to open HTTP connection with the firmware upgrade server: %s", esp_err_to_name(err));
-    esp_http_client_cleanup(client);
-    task_fatal_error();
-  }
-  esp_http_client_fetch_headers(client);
-  // ---- Connect to HTTP server ---------------------------------------
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+      ESP_LOGE(OTA_TAG,
+               "Failed to initialise HTTP connection with the "
+               "firmware upgrade server at: %s",
+               CONFIG_FIRMWARE_UPG_URL);
+      ESP_LOGE(OTA_TAG, "Retrying in %ds...", CONFIG_OTA_RETRY_INTERVAL);
 
-  update_partition = esp_ota_get_next_update_partition(NULL);
-  assert(update_partition != NULL);
-  ESP_LOGI(OTA_TAG, "Writing to partition subtype %d at offset 0x%" PRIx32,
-           update_partition->subtype, update_partition->address);
+      vTaskDelay(retry_delay_ms / portTICK_PERIOD_MS);
+      continue;
+    }
+    err = esp_http_client_open(client, 0);
+    if (err != ESP_OK) {
+      ESP_LOGE(OTA_TAG,
+               "Failed to open HTTP connection with the firmware upgrade "
+               "server: %s",
+               esp_err_to_name(err));
+      ESP_LOGE(OTA_TAG, "Retrying in %ds...", CONFIG_OTA_RETRY_INTERVAL);
+      esp_http_client_cleanup(client);
 
-  // Handle recieved packet
-  int binary_file_length = 0;
-  bool image_header_was_checked = false;
-  while (1) {
-    int data_read = esp_http_client_read(client, ota_write_data, BUFFSIZE);
-    if (data_read < 0) {
-      ESP_LOGE(OTA_TAG, "Error: SSL data read error");
-      http_cleanup(client);
-      task_fatal_error();
-    } else if (data_read > 0) {
-      if (image_header_was_checked == false) {
-        esp_app_desc_t new_app_info;
+      vTaskDelay(retry_delay_ms / portTICK_PERIOD_MS);
+      continue;
+    }
+    esp_http_client_fetch_headers(client);
+    // ---- Connect to HTTP server ---------------------------------------
 
-        if (data_read <= sizeof(esp_image_header_t) +
-                             sizeof(esp_image_segment_header_t) +
-                             sizeof(esp_app_desc_t)) {
-          ESP_LOGE(OTA_TAG, "received package is not fit len");
-          http_cleanup(client);
-          esp_ota_abort(update_handle);
-          task_fatal_error();
+    update_partition = esp_ota_get_next_update_partition(NULL);
+    assert(update_partition != NULL);
+
+    ESP_LOGI(OTA_TAG, "Writing to partition subtype %d at offset 0x%" PRIx32,
+             update_partition->subtype, update_partition->address);
+
+    // Handle recieved packet
+    int binary_file_length = 0;
+    bool image_header_was_checked = false;
+
+    bool ota_in_progress = false;      // Track if esp_ota_begin has been called
+    bool ota_error = false;            // If a retry is needed
+    bool ota_wait_new_version = false; // If OTA succeded but no update needed
+    while (1) {
+      int data_read = esp_http_client_read(client, ota_write_data, BUFFSIZE);
+      if (data_read < 0) {
+        ESP_LOGE(OTA_TAG, "Error: SSL data read error");
+
+        ota_error = true;
+        break;
+      } else if (data_read == 0) {
+        if (errno == ECONNRESET || errno == ENOTCONN) {
+          ESP_LOGE(OTA_TAG, "Connection closed, errno = %d", errno);
+          break;
         }
+        if (esp_http_client_is_complete_data_received(client) == true) {
+          ESP_LOGI(OTA_TAG, "Connection closed");
+          break;
+        }
+      } else if (data_read > 0) {
+        if (image_header_was_checked == false) {
+          esp_app_desc_t new_app_info;
 
-        if (data_read > sizeof(esp_image_header_t) +
-                            sizeof(esp_image_segment_header_t) +
-                            sizeof(esp_app_desc_t)) {
+          if (data_read <= sizeof(esp_image_header_t) +
+                               sizeof(esp_image_segment_header_t) +
+                               sizeof(esp_app_desc_t)) {
+            ESP_LOGE(OTA_TAG, "received package is not fit len");
 
-          // ---- Version check ------------------------------------------------
-          // Check current version with the new one
-          memcpy(&new_app_info,
-                 &ota_write_data[sizeof(esp_image_header_t) +
-                                 sizeof(esp_image_segment_header_t)],
-                 sizeof(esp_app_desc_t));
-          ESP_LOGI(OTA_TAG, "New firmware version: %s", new_app_info.version);
-
-          esp_app_desc_t running_app_info;
-          if (esp_ota_get_partition_description(running, &running_app_info) ==
-              ESP_OK) {
-            ESP_LOGI(OTA_TAG, "Running firmware version: %s",
-                     running_app_info.version);
+            ota_error = true;
+            break;
           }
 
-          const esp_partition_t *last_invalid_app =
-              esp_ota_get_last_invalid_partition();
-          esp_app_desc_t invalid_app_info;
-          if (esp_ota_get_partition_description(last_invalid_app,
-                                                &invalid_app_info) == ESP_OK) {
-            ESP_LOGI(OTA_TAG, "Last invalid firmware version: %s",
-                     invalid_app_info.version);
-          }
+          if (data_read > sizeof(esp_image_header_t) +
+                              sizeof(esp_image_segment_header_t) +
+                              sizeof(esp_app_desc_t)) {
 
-          // Check current version with last invalid partition
-          if (last_invalid_app != NULL) {
-            if (memcmp(invalid_app_info.version, new_app_info.version,
-                       sizeof(new_app_info.version)) == 0) {
-              ESP_LOGW(OTA_TAG, "New version is the same as invalid version.");
-              ESP_LOGW(OTA_TAG,
-                       "Previously, there was an attempt to launch the "
-                       "firmware with %s version, but it failed.",
-                       invalid_app_info.version);
-              ESP_LOGW(
-                  OTA_TAG,
-                  "The firmware has been rolled back to the previous version.");
-              http_cleanup(client);
-              wait_for_new_fiwmware();
+            // ---- Version check ---------------------------------------------
+            // Get new firmware info
+            memcpy(&new_app_info,
+                   &ota_write_data[sizeof(esp_image_header_t) +
+                                   sizeof(esp_image_segment_header_t)],
+                   sizeof(esp_app_desc_t));
+            ESP_LOGI(OTA_TAG, "New firmware version: %s", new_app_info.version);
+
+            esp_app_desc_t running_app_info;
+            if (esp_ota_get_partition_description(running, &running_app_info) ==
+                ESP_OK) {
+              ESP_LOGI(OTA_TAG, "Running firmware version: %s",
+                       running_app_info.version);
             }
-          }
+
+            // Get last invalid firmware info
+            const esp_partition_t *last_invalid_app =
+                esp_ota_get_last_invalid_partition();
+            esp_app_desc_t invalid_app_info;
+            if (esp_ota_get_partition_description(
+                    last_invalid_app, &invalid_app_info) == ESP_OK) {
+              ESP_LOGI(OTA_TAG, "Last invalid firmware version: %s",
+                       invalid_app_info.version);
+            }
+
+            // Check current firmware version with last invalid firmware version
+            if (last_invalid_app != NULL) {
+              if (memcmp(invalid_app_info.version, new_app_info.version,
+                         sizeof(new_app_info.version)) == 0) {
+                ESP_LOGW(OTA_TAG,
+                         "New version is the same as an invalid version.");
+                ESP_LOGW(OTA_TAG,
+                         "Previously, there was an attempt to launch the "
+                         "firmware with %s version, but it failed.",
+                         invalid_app_info.version);
+                ESP_LOGW(OTA_TAG, "The firmware has been rolled back to the "
+                                  "previous version.");
+
+                ota_error = true;
+                break;
+              }
+            }
 
 #ifndef CONFIG_SKIP_VERSION_CHECK
-          if (memcmp(new_app_info.version, running_app_info.version,
-                     sizeof(new_app_info.version)) == 0) {
-            ESP_LOGW(OTA_TAG, "Current running version is the same as a new. We "
-                          "will not continue the update.");
-            http_cleanup(client);
-            wait_for_new_fiwmware();
-          }
+            // Check new firmware version
+            if (memcmp(new_app_info.version, running_app_info.version,
+                       sizeof(new_app_info.version)) == 0) {
+              ESP_LOGW(OTA_TAG, "Current running version is the same as a new. "
+                                "The update will not be made.");
+              ota_wait_new_version = true;
+              break;
+            }
 #endif
-          // ---- Version check ------------------------------------------------
+            // ---- Version check ----------------------------------------------
 
-          image_header_was_checked = true;
+            image_header_was_checked = true;
 
-          // ---- Begin OTA segment write to partition -------------------------
-          err = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES,
-                              &update_handle);
-          if (err != ESP_OK) {
-            ESP_LOGE(OTA_TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
-            http_cleanup(client);
-            esp_ota_abort(update_handle);
-            task_fatal_error();
+            // ---- Begin OTA segment write to partition -----------------------
+            err = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES,
+                                &update_handle);
+            if (err != ESP_OK) {
+              ESP_LOGE(OTA_TAG, "esp_ota_begin failed (%s)",
+                       esp_err_to_name(err));
+
+              ota_error = true;
+              break;
+            }
+            ota_in_progress = true;
+            ESP_LOGI(OTA_TAG, "esp_ota_begin succeeded");
+            ESP_LOGI(OTA_TAG, "Updating firmware...");
+            // ---- Begin OTA segment write to partition -----------------------
           }
-          ESP_LOGI(OTA_TAG, "esp_ota_begin succeeded");
-          ESP_LOGI(OTA_TAG, "Updating firmware...");
-          // ---- Begin OTA segment write to partition -------------------------
         }
-      }
 
-      // --- Write new firmware segment to partition --------------------------
-      err =
-          esp_ota_write(update_handle, (const void *)ota_write_data, data_read);
-      if (err != ESP_OK) {
-        http_cleanup(client);
+        // --- Write new firmware segment to partition ------------------------
+        err = esp_ota_write(update_handle, (const void *)ota_write_data,
+                            data_read);
+        if (err != ESP_OK) {
+          http_cleanup(client);
+
+          ota_error = true;
+          break;
+        }
+
+        binary_file_length += data_read;
+        ESP_LOGD(OTA_TAG, "Written image length %d", binary_file_length);
+        // --- Write new firmware segment to partition -----------------------
+      }
+    }
+
+    // If error occured retry
+    if (ota_error) {
+      ESP_LOGE(OTA_TAG, "An error occurred during OTA. Retrying in %ds...",
+               CONFIG_OTA_RETRY_INTERVAL);
+      http_cleanup(client);
+      if (ota_in_progress) {
         esp_ota_abort(update_handle);
-        task_fatal_error();
       }
-
-      binary_file_length += data_read;
-      ESP_LOGD(OTA_TAG, "Written image length %d", binary_file_length);
-      // --- Write new firmware segment to partition --------------------------
-    } else if (data_read == 0) {
-      /*
-       * As esp_http_client_read never returns negative error code, we rely on
-       * `errno` to check for underlying transport connectivity closure if any
-       */
-      if (errno == ECONNRESET || errno == ENOTCONN) {
-        ESP_LOGE(OTA_TAG, "Connection closed, errno = %d", errno);
-        break;
-      }
-      if (esp_http_client_is_complete_data_received(client) == true) {
-        ESP_LOGI(OTA_TAG, "Connection closed");
-        break;
-      }
+      vTaskDelay(retry_delay_ms / portTICK_PERIOD_MS);
+      continue;
+    } else if (ota_wait_new_version) {
+      ESP_LOGI(OTA_TAG, "No new firmware version available. Retrying in %ds...",
+               CONFIG_OTA_RETRY_INTERVAL);
+      vTaskDelay(retry_delay_ms / portTICK_PERIOD_MS);
+      continue;
     }
-  }
 
-  // --- Check written firmware -------------------------------------------
-  ESP_LOGI(OTA_TAG, "Total Write binary data length: %d", binary_file_length);
+    // --- Check written firmware -----------------------------------------
+    ESP_LOGI(OTA_TAG, "Total Write binary data length: %d", binary_file_length);
 
-  if (esp_http_client_is_complete_data_received(client) != true) {
-    ESP_LOGE(OTA_TAG, "Error in receiving complete file");
-    http_cleanup(client);
-    esp_ota_abort(update_handle);
-    task_fatal_error();
-  }
+    if (esp_http_client_is_complete_data_received(client) != true) {
+      ESP_LOGE(OTA_TAG, "Error in receiving complete file. Retrying in %ds...",
+               CONFIG_OTA_RETRY_INTERVAL);
+      http_cleanup(client);
 
-  err = esp_ota_end(update_handle);
-  if (err != ESP_OK) {
-    if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
-      ESP_LOGE(OTA_TAG, "Image validation failed, image is corrupted");
-    } else {
-      ESP_LOGE(OTA_TAG, "esp_ota_end failed (%s)!", esp_err_to_name(err));
+      if (ota_in_progress) {
+        esp_ota_abort(update_handle);
+      }
+
+      vTaskDelay(retry_delay_ms / portTICK_PERIOD_MS);
+      continue;
     }
-    http_cleanup(client);
-    task_fatal_error();
-  }
 
-  err = esp_ota_set_boot_partition(update_partition);
-  if (err != ESP_OK) {
-    ESP_LOGE(OTA_TAG, "esp_ota_set_boot_partition failed (%s)!",
-             esp_err_to_name(err));
-    http_cleanup(client);
-    task_fatal_error();
-  }
-  // --- Check written firmware -------------------------------------------
+    err = esp_ota_end(update_handle);
+    if (err != ESP_OK) {
+      if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
+        ESP_LOGE(
+            OTA_TAG,
+            "Image validation failed, image is corrupted. Retrying in %ds...",
+            CONFIG_OTA_RETRY_INTERVAL);
+      } else {
+        ESP_LOGE(OTA_TAG, "esp_ota_end failed (%s)!", esp_err_to_name(err));
+        ESP_LOGE(OTA_TAG, "Retrying in %ds...", CONFIG_OTA_RETRY_INTERVAL);
+      }
 
-  // Apply the update
-  ESP_LOGI(OTA_TAG, "Prepare to restart system!");
-  esp_restart();
-  return;
+      http_cleanup(client);
+      vTaskDelay(retry_delay_ms / portTICK_PERIOD_MS);
+      continue;
+    }
+
+    err = esp_ota_set_boot_partition(update_partition);
+    if (err != ESP_OK) {
+      ESP_LOGE(OTA_TAG, "esp_ota_set_boot_partition failed (%s)!",
+               esp_err_to_name(err));
+      ESP_LOGE(OTA_TAG, "Retrying in %ds...", CONFIG_OTA_RETRY_INTERVAL);
+      http_cleanup(client);
+      vTaskDelay(retry_delay_ms / portTICK_PERIOD_MS);
+      continue;
+    }
+    // --- Check written firmware -----------------------------------------
+
+    // Apply the update
+    ESP_LOGI(OTA_TAG, "Prepare to restart system!");
+    http_cleanup(client);
+    esp_restart();
+    return;
+  }
 }
 
 void diagnose_new_firmware() {

@@ -91,6 +91,13 @@ menu "Over The Air Updates configuration"
           default 5000
           help
               Maximum time for reception in milliseconds
+
+      config OTA_RETRY_INTERVAL
+          int "OTA Retry Interval (in seconds)"
+          default 30
+          help
+              Interval between OTA download retries if an error occurs.
+              Value is in seconds.
   endmenu
 
 endmenu
