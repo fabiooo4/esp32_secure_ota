@@ -591,29 +591,40 @@ CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 \end{lstlisting}
 
   \item \textbf{Server HTTP}: per permettere il download del nuovo firmware è stato
-    creato un server HTTP in \texttt{server/pytest\_simple\_ota.py} che rende
-    disponibile il file binario del firmware aggiornato.
+    creato un server HTTP in \texttt{ota\_https\_server} che rende
+    disponibile il file binario del firmware aggiornato. La cartella che il server
+    condivide di default è \texttt{ota\_https\_server/firmware} e di conseguenza
+    il file binario del firmware deve essere copiato (o fare un link simbolico) in
+    questa cartella per essere accessibile dal dispositivo.
 
-    Il server richiede, nella sua cartella, la presenza di un certificato SSL per
-    permettere connessioni sicure attraverso HTTPS. Il certificato è stato generato
-    eseguendo il seguente comando nella cartella \texttt{server/}:
+    Se si vuole aprire il server in modalità HTTPS, allora è necessario generare un
+    certificato SSL per permettere connessioni sicure. 
+    Il certificato è si può generare eseguendo il seguente comando in una qualsiasi
+    cartella, in questo caso è stata usata la cartella
+    \texttt{ota\_https\_server/certificates}:
 \begin{lstlisting}
-cd server
+cd ota_https_server/certificates
 openssl req -x509 -newkey rsa:2048 -keyout ca_key.pem -out ca_cert.pem -days 365 -nodes
 \end{lstlisting}
+    Questo comando genera due file:
+    \begin{itemize}
+      \item \texttt{ca\_key.pem}: chiave privata del certificato
+      \item \texttt{ca\_cert.pem}: certificato SSL pubblico
+    \end{itemize}
     \textbf{Nota}: durante la creazione del certificato nel campo \texttt{Common Name (CN)}
     deve essere inserito il nome host del server. Se il server viene eseguito in locale
-    il campo deve essere impostato con l'indirizzo IP del server.
+    il campo deve essere impostato con l'indirizzo IP del server e bisogna disabilitare
+    il controllo del CN nel menuconfig del progetto.
 
     Una volta generato il certificato bisogna flashare il file \texttt{ca\_cert.pem}
     sul dispositivo in modo che possa verificare l'autenticità del server.
     Per fare ciò bisogna copiare il file nella cartella \texttt{server\_certs/} del
-    progetto:
+    progetto (la working directory è ancora \texttt{ota\_https\_server/certificates}):
 \begin{lstlisting}
-cp ca_cert.pem ../server_certs
+cp ca_cert.pem ../../server_certs
 \end{lstlisting}
     Inoltre è necessario modificare il file \texttt{main/CMakeLists.txt} per includere
-    il certificato nel firmware:
+    il certificato nel firmware con il seguente contenuto:
 \begin{lstlisting}
 idf_build_get_property(project_dir PROJECT_DIR)
 idf_component_register(SRCS "main.c" INCLUDE_DIRS "."
@@ -621,21 +632,37 @@ idf_component_register(SRCS "main.c" INCLUDE_DIRS "."
 \end{lstlisting}
 
     Una volta configurato il tutto, il server può essere avviato eseguendo il comando:
+    \begin{itemize}
+      \item Server HTTP senza certificato SSL:
 \begin{lstlisting}
-python pytest_simple_ota.py <BIN_DIR> <PORT> [CERT_DIR]
+cargo run --release
 \end{lstlisting}
+
+      \item Server HTTPS con certificato SSL:
+\begin{lstlisting}
+cargo run --release -- -c <CERT_DIR>
+\end{lstlisting}
+    \end{itemize}
     Dove:
     \begin{itemize}
-      \item \texttt{<BIN\_DIR>} è la cartella che contiene il file binario del firmware.
-      \item \texttt{<PORT>} è la  porta su cui eseguire il server HTTP.
-      \item \texttt{[CERT\_DIR]} (opzionale) è cartella che contiene il certificato SSL
+      \item \texttt{<CERT\_DIR>}  è cartella che contiene il certificato SSL
         del server. Se non viene specificata viene usata la cartella corrente.
     \end{itemize}
+    È possibile configurare altri parametri che sono elencati eseguendo il comando:
+\begin{lstlisting}
+cargo run --release -- --help
+\end{lstlisting}
+
     Se tutto è andato a buon fine l'output del server sarà simile al seguente:
 \begin{lstlisting}
-$ python pytest_simple_ota.py build 8070
-Starting HTTPS server at "https://:8070"
-192.168.10.106 - - [01/Jan/2026 12:00:00] "GET /esp32_secure_ota.bin HTTP/1.1" 200 -
+$ cargo run --release -- -c certificates 
+    Finished `release` profile [optimized] target(s) in 0.11s
+     Running `target/release/ota_https_server -c certificates`
+2025-11-28T14:50:04.418063Z  INFO ota_https_server: --cert-dir provided, starting in HTTPS mode.
+2025-11-28T14:50:04.418077Z  INFO ota_https_server: Using certificate: "/home/fabio/dev/esp32/esp32_secure_ota/ota_https_server/certificates/ca_cert.pem"
+2025-11-28T14:50:04.418082Z  INFO ota_https_server: Using private key: "/home/fabio/dev/esp32/esp32_secure_ota/ota_https_server/certificates/ca_key.pem"
+2025-11-28T14:50:04.418199Z  INFO ota_https_server: Starting HTTPS server on https://0.0.0.0:8070/ serving files from "/home/fabio/dev/esp32/esp32_secure_ota/ota_https_server/firmware"
+2025-11-28T14:50:04.418205Z  INFO ota_https_server: Your ESP32 should connect to: https://<your_ipv4>:8070/<bin_name>
 \end{lstlisting}
 
   \item \textbf{Supporto del versionamento}: per tenere traccia delle versioni del firmware
@@ -663,7 +690,8 @@ idf.py menuconfig
         \begin{itemize}
           \item \texttt{SSID}: nome della rete Wi-Fi
           \item \texttt{Password}: password della rete Wi-Fi
-          \item \texttt{Maximum retries}: numero massimo di tentativi di riconnessione
+          \item \texttt{Retry interval}: intervallo (in secondi) tra un tentativo di
+            connessione e l'altro in caso di disconnessione
           \item \texttt{WPA3 SAE mode selection}: modalità di autenticazione WPA3
           \item \texttt{Password identifier}: identificatore della password WPA3
           \item \texttt{WiFi Scan auth mode threshold}: modalità di
@@ -696,6 +724,9 @@ https://<host-ip-address>:<host-port>/<firmware-image-filename>
 
           \item \texttt{OTA recieve timeout}: tempo massimo (in millisecondi)
             per ricevere una risposta dal server HTTP durante l'aggiornamento OTA.
+
+          \item \texttt{OTA retry interval}: intervallo di tempo (in secondi) tra un
+            controllo e l'altro della disponibilità di un nuovo firmware sul server.
         \end{itemize}
 
     \end{itemize}
@@ -714,13 +745,18 @@ in caso di disconnessione. La funzione esegue i seguenti passaggi:
   \item Imposta il device in modalità stazione Wi-Fi con la configurazione fornita
     dal menuconfig
   \item Avvia la connessione alla rete Wi-Fi
-  \item Attende fino a quando il dispositivo non si connette alla rete o raggiunge
-    il numero massimo di tentativi di riconnessione
+  \item Attende fino a quando il dispositivo non si connette alla rete
+  \item Registra degli handler per gestire gli eventi di disconnessione e
+    riconnessione. Se avviene una disconnessione si tenta di riconnettersi con un
+    intervallo impostabile tramite il menuconfig
   \item Restituisce lo stato della connessione (successo o fallimento)
 \end{enumerate}
+Gli handler rimangono attivi per tutta la durata dell'applicazione per gestire
+eventuali disconnessioni e tentativi di riconnessione anche dopo che la funzione
+\texttt{connect\_wifi()} ha restituito il controllo all'applicazione principale.
 
 \subsubsection{Aggiornamento OTA}
-L'aggiornamento OTA viene gestito nel file \texttt{main/ota.c} che fornisce le funzione
+L'aggiornamento OTA viene gestito nel file \texttt{main/ota.c} che fornisce le funzioni
 \texttt{download\_new\_firmware()} e \texttt{diagnose\_new\_firmware()}. La funzione
 \texttt{download\_new\_firmware()} connette il dispositivo al server HTTP e scarica
 il nuovo firmware, se disponibile, e lo imposta come nuova applicazione di boot.
@@ -742,6 +778,8 @@ I passi eseguiti sono i seguenti:
   \item Imposta la partizione OTA appena scritta come partizione di boot
   \item Riavvia il dispositivo per eseguire il nuovo firmware
 \end{enumerate}
+Questi passi vengono ripetuti con un intervallo di tempo impostabile tramite il
+menuconfig per controllare periodicamente la disponibilità di un nuovo firmware.
 
 \noindent
 La funzione \texttt{diagnose\_new\_firmware()} permette di verificare se il nuovo

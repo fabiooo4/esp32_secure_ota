@@ -56,7 +56,7 @@ https://<host-ip-address>:<host-port>/<firmware-image-filename>
 ```
 For example:
 ```
-https://192.168.2.106:8070/binary.bin
+https://192.168.2.106:8070/esp32_secure_ota.bin
 ```
 
 **Note**: The server part of this URL (e.g. `192.168.2.106`) must match the **CN** field used
@@ -66,19 +66,19 @@ The server requires an SSL certificate, but this can be disabled.
 
 # Testing server
 
-In the `server/` directory there is a python script that runs a test server providing an
-updated binary. The binary must be in the `server/` directory with the name matching
-the one set in the `Upgrade Server` configuration url.
+In the `ota_https_server/` directory there is a rust project that runs a test server providing an
+updated binary. The binary must be (by default) in the `ota_https_server/firmware`
+directory with the name matching the one set in the `Upgrade Server` configuration url.
 
 ## SSL Certificate generation
 To generate a self-signed SSL certificate and private key do the following:
-- Enter the `server/` directory, e.g. `cd server/`
+- Enter the `ota_https_server/certificates` directory, e.g. `cd ota_https_server/certificates`
 - Run the following command to generate a self-signed SSL certificate and private key:
 `openssl req -x509 -newkey rsa:2048 -keyout ca_key.pem -out ca_cert.pem -days 365 -nodes`
   - When prompted for the `Common Name (CN)`, enter the IP address of the server that will host the binary file.
   When using the test server, this should match the host IP address in the `Upgrade Server` configuration URL.
   - This will generate two files: `ca_cert.pem` (the certificate) and `ca_key.pem` (the private key).
-- The `server/` directory should contain the updated firmware, e.g. `binary.bin`. This can be any valid ESP-IDF
+- The `ota_https_cerver/firmware` directory should contain the updated firmware, e.g. `esp32_secure_ota.bin`. This can be any valid ESP-IDF
   application, as long as its filename corresponds to the name configured using the `Upgrade Server` configuration URL
   in menuconfig. The only difference to flashing a firmware via the serial interface is that the binary is flashed to
   the `factory` partition, while OTA update use one of the OTA partitions.
@@ -87,20 +87,21 @@ To generate a self-signed SSL certificate and private key do the following:
 Copy the generated certificate to `server_certs/` directory so it can be flashed on the device along with
 the firmware:
 ```
-cp server/ca_cert.pem server_certs/
+cp ota_https_server/certificates/ca_cert.pem server_certs/
 ```
 
 ## Running the server
-To run the server execute the following:
+To run the server without SSL cerificate execute the following:
 
 ```
-python pytest_simple_ota.py <path_to_server_dir> <port> [cert_dir]
+cargo run --release
 ```
-For example, in the `server/` directory:
+or to run the server with SSL certificate:
 
 ```
-python pytest_simple_ota.py . 8070
+cargo run --release -- --c ./certificates
 ```
+
 
 ## Internal workflow of the OTA Updates
 

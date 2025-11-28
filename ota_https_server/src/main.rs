@@ -20,7 +20,7 @@ use tracing::{error, info, warn};
 #[clap(author, version, about, long_about = None)]
 struct Args {
     /// Directory to serve files from
-    #[clap(short, long)]
+    #[clap(short, long, default_value = "firmware")]
     dir: PathBuf,
 
     /// IP address to bind to
