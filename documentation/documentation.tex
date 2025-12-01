@@ -810,6 +810,101 @@ alla rete Wi-Fi e scaricare il nuovo firmware. I passi eseguiti sono i seguenti:
     loop che stampa un messaggio ogni 5 secondi)
 \end{enumerate}
 
+\subsection{Flash Encryption}
+\subsubsection{Configurazione del progetto}
+Prima di attivare la Flash Encryption bisogna assicurarsi di avere i valori default degli
+eFuse relativi alla Flash Encryption. I passi per attivare la Flash Encryption sono i seguenti
+dal menuconfig:
+\begin{enumerate}
+  \item Disattivare NVS Encryption in:
+\begin{lstlisting}
+Component config > NVS > Enable NVS encryption
+\end{lstlisting}
+    Siccome verrà attivata la Flash Encryption, non è necessario usare anche la NVS Encryption.
+
+  \item Attivare la Flash Encryption all'avvio in:
+\begin{lstlisting}
+Security features > Enable Flash Encryption on boot
+\end{lstlisting}
+
+  \item Selezionare la modalità di Flash Encryption in:
+\begin{lstlisting}
+Security features > Enable usage mode
+\end{lstlisting}
+    Qui si può scegliere tra:
+    \begin{itemize}
+      \item \textbf{Development mode}: permette di flashare nuove immagini non
+        crittografate sul dispositivo per testare il processo di crittografia.
+      \item \textbf{Release mode}: non permette più di flashare nuove immagini
+        sul dispositivo senza conoscere la chiave di crittografia.
+    \end{itemize}
+
+  \item Selezionare la modalità di UART Download (disponibile solo dopo aver impostato
+    la versione minima di ESP32 a 3 in:
+\begin{lstlisting}
+Component config > Hardware Settings > Chip revision > Minimum Supported ESP32 Revision (Rev v3.x)
+\end{lstlisting}
+    ).
+    La modalità di UART Download può essere configurata in:
+\begin{lstlisting}
+Security features > UART ROM Download mode
+\end{lstlisting}
+    È consigliato disattivare la modalità di UART Download in Release mode per
+    impedire l'accesso non autorizzato alla memoria flash. Per il testing, quindi
+    in modalità Development, è meglio lasciarla abilitata.
+
+  \item Abilitare la Flash Encryption aumenta la dimensione del bootloader, quindi bisogna
+    aumentare l'offset della partition table:
+\begin{lstlisting}
+Partition Table > Offset of partition table
+\end{lstlisting}
+    Per questo progetto è stato impostato a \texttt{0x10000} (64KB).
+
+  \item Salvare e uscire dal menuconfig.
+
+  \item Eseguire il seguente comando per buildare e flashare l'immagine sul dispositivo:
+\begin{lstlisting}
+idf.py flash monitor
+\end{lstlisting}
+    Questo comando scrive sulla memoria flash immagini non crittografate, cioè:
+    \begin{itemize}
+      \item il bootloader
+      \item la partition table
+      \item l'applicazione principale
+    \end{itemize}
+    Una volta che la fase di flash è completata il dispositivo si riavvia e all'avvio
+    successivo il second stage bootloader crittografa:
+    \begin{itemize}
+      \item il second stage bootloader
+      \item partizioni di tipo \texttt{app}
+      \item partizioni con la flag \texttt{encrypted} nella partition table
+    \end{itemize}
+    e alla fine si riavvia nuovamente per eseguire l'immagine crittografata.
+    Agli avvi successivi il bootloader decrittografa automaticamente i dati
+    della memoria flash prima di eseguirli.
+
+    \vspace{1em}
+    \noindent
+    Questo comando non include alcun file definito dall'utente e quindi i file da
+    includere nella memoria flash devono essere scritti manualmente. Se non viene
+    fatto prima che il bootloader esegua la crittografia, questi file dovranno essere
+    crittografati separatamente prima di scriverli nella memoria flash. Nel caso di questo
+    progetto tutti i file aggiuntivi sono inclusi automaticamente durante la build
+    dell'immagine del firmware e non c'è bisogno di fare alcun passaggio extra.
+\end{enumerate}
+Dopo aver completato questi passaggi, la Flash Encryption è attiva e da questo momento
+in poi bisogna flashare soltanto immagini crittografate sul dispositivo. Per aggiornare
+l'applicazione bisogna prima crittografarla usando il seguente comando:
+\begin{lstlisting}
+idf.py encrypted-app-flash monitor
+\end{lstlisting}
+Per aggiornare tutte le partizioni crittografandole si usa il comando:
+\begin{lstlisting}
+idf.py encrypted-flash monitor
+\end{lstlisting}
+
+
+
 % \section{Analisi dei risultati}
 % \section{Conclusioni}
 
