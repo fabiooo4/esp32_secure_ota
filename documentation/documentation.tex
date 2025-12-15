@@ -851,7 +851,8 @@ Security features > UART ROM Download mode
 \end{lstlisting}
     È consigliato disattivare la modalità di UART Download in Release mode per
     impedire l'accesso non autorizzato alla memoria flash. Per il testing, quindi
-    in modalità Development, è meglio lasciarla abilitata.
+    in modalità Development, è meglio lasciarla abilitata. Una volta disabilitata
+    non sarà più possibile riabilitarla.
 
   \item Abilitare la Flash Encryption aumenta la dimensione del bootloader, quindi bisogna
     aumentare l'offset della partition table:
@@ -903,7 +904,84 @@ Per aggiornare tutte le partizioni crittografandole si usa il comando:
 idf.py encrypted-flash monitor
 \end{lstlisting}
 
+\subsection{Secure boot}
+\subsubsection{Configurazione del progetto}
+Una volta attivata la Flash Encryption si può attivare il Secure Boot v2.
+I passi per attivare il Secure Boot v2 sono i seguenti:
+\begin{enumerate}
+  \item  La versione 2 del Secure Boot è disponibile soltanto per chip ESP32 con
+    versione v3.0 o maggiore. Bisogna cambiare la versione minima del chip
+    supportata dal progetto dal menuconfig:
+\begin{lstlisting}
+Component config > Hardware Settings > Chip revision > Minimum Supported ESP32 Revision (Rev v3.x)
+\end{lstlisting}
 
+  \item \label{secure_boot_key}
+    Generare una chiave RSA-3072 per firmare le immagini del firmware. Questo può
+    essere fatto eseguendo il seguente comando nella cartella principale del progetto:
+\begin{lstlisting}
+idf.py secure-generate-signing-key --version 2 --scheme rsa3072
+\end{lstlisting}
+   \textbf{Nota:} la chiave generata deve essere sempre mantenuta segreta.
+
+  \item Abilitare il Secure Boot v2 in:
+    \begin{lstlisting}
+Security features > Enable hardware Secure Boot in bootloader
+    \end{lstlisting}
+
+  \item \label{secure_boot_key_path}
+    Specificare il percorso, relativo alla directory del progetto, della chiave
+    generata nel passo \ref{secure_boot_key} in:
+\begin{lstlisting}
+
+\end{lstlisting}
+
+  \item Selezionare la modalità di UART Download in:
+\begin{lstlisting}
+Security features > UART ROM Download mode
+\end{lstlisting}
+    È consigliato disattivare la modalità di UART Download in production, ma per
+    il testing è meglio lasciarla abilitata. Una volta disabilitata non sarà più possibile
+    riabilitarla.
+
+  \item Salvare e uscire dal menuconfig.
+
+  \item Eseguire il comando
+\begin{lstlisting}
+idf.py bootloader
+\end{lstlisting}
+    per buildare un bootloader firmato per il Secure Boot. L'output della build
+    includerà un comando per flashare il bootloader firmato sulla memoria flash
+    usando:
+\begin{lstlisting}
+esptool.py write_flash --encrypt
+\end{lstlisting}
+    \textbf{Nota:} siccome la flash encryption dovrebbe essere già stata attivata,
+    bisogna usare l'opzione \texttt{--encrypt} per flashare il bootloader firmato.
+
+  \item Flashare il bootloader firmato sulla memoria flash eseguendo il comando
+    mostrato nell'output della build del bootloader.
+
+  \item Eseguire il comando:
+\begin{lstlisting}
+idf.py flash monitor
+\end{lstlisting}
+    per buildare e flashare la partition table e l'applicazione principale.
+    L'immagine verrà firmata utilizzando la chiave specificata nel passo \ref{secure_boot_key_path}.
+    \textbf{Nota:} il comando \texttt{idf.py flash} non include il bootloader
+    quando il Secure Boot è abilitato, quindi bisogna flasharlo separatamente come
+    descritto nel passo precedente.
+
+  \item Riavviare il dispositivo per eseguire il bootloader firmato. Il bootloader
+    abiliterà il Secure Boot sul chip, verificherà la firma dell'immagine
+    dell'applicazione e la eseguirà. Eventuali errori verranno mostrati nella
+    console e il Secure Boot non verrà abilitato finchè non vengono flashate
+    immagini valide per evitare di bloccare il dispositivo.
+
+  \item Da questo momento in poi, ad ogni avvio il Secure Boot verificherà che
+    il bootloader non sia stato modificato e che l'immagine dell'applicazione
+    sia valida prima di eseguirla.
+\end{enumerate}
 
 % \section{Analisi dei risultati}
 % \section{Conclusioni}
