@@ -816,11 +816,6 @@ Prima di attivare la Flash Encryption bisogna assicurarsi di avere i valori defa
 eFuse relativi alla Flash Encryption. I passi per attivare la Flash Encryption sono i seguenti
 dal menuconfig:
 \begin{enumerate}
-  \item Disattivare NVS Encryption in:
-\begin{lstlisting}
-Component config > NVS > Enable NVS encryption
-\end{lstlisting}
-    Siccome verrà attivata la Flash Encryption, non è necessario usare anche la NVS Encryption.
 
   \item Attivare la Flash Encryption all'avvio in:
 \begin{lstlisting}
@@ -838,6 +833,19 @@ Security features > Enable usage mode
       \item \textbf{Release mode}: non permette più di flashare nuove immagini
         sul dispositivo senza conoscere la chiave di crittografia.
     \end{itemize}
+
+  \item Disattivare NVS Encryption in:
+    \begin{lstlisting}
+Component config > NVS > Enable NVS encryption
+    \end{lstlisting}
+    Per questo progetto non è necessario usare anche la NVS Encryption, se si volesse
+    attivare servirebbe definire una partition table personalizzata con una partizione
+\begin{lstlisting}
+# Name,   Type, SubType, Offset,  Size, Flags
+...
+nvs_keys, data, nvs_keys,,        0x1000, encrypted
+...
+\end{lstlisting}
 
   \item Selezionare la modalità di UART Download (disponibile solo dopo aver impostato
     la versione minima di ESP32 a 3 in:
@@ -894,8 +902,9 @@ idf.py flash monitor
     dell'immagine del firmware e non c'è bisogno di fare alcun passaggio extra.
 \end{enumerate}
 Dopo aver completato questi passaggi, la Flash Encryption è attiva e da questo momento
-in poi bisogna flashare soltanto immagini crittografate sul dispositivo. Per aggiornare
-l'applicazione bisogna prima crittografarla usando il seguente comando:
+in poi per aggiornare l'applicazione tramite USB,
+se Flash Encryption è in modalità Development con la modalità di UART Download abilitata,
+bisogna prima crittografarla usando il seguente comando:
 \begin{lstlisting}
 idf.py encrypted-app-flash monitor
 \end{lstlisting}
@@ -903,6 +912,8 @@ Per aggiornare tutte le partizioni crittografandole si usa il comando:
 \begin{lstlisting}
 idf.py encrypted-flash monitor
 \end{lstlisting}
+    Altrimenti, tramite aggiornamento OTA, il dispositivo può scaricare il firmware 
+    in chiaro e crittografarlo localmente prima di scriverlo in memoria flash.
 
 \subsection{Secure boot}
 \subsubsection{Configurazione del progetto}
