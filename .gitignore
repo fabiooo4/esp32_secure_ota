@@ -1,9 +1,9 @@
 build/
+log/
 .cache/
 sdkconfig
 sdkconfig.old
-ca_key.pem
-ca_cert.pem
+*.pem
 
 # Latex
 documentation/*.aux

@@ -931,7 +931,7 @@ Component config > Hardware Settings > Chip revision > Minimum Supported ESP32 R
     Generare una chiave RSA-3072 per firmare le immagini del firmware. Questo può
     essere fatto eseguendo il seguente comando nella cartella principale del progetto:
 \begin{lstlisting}
-idf.py secure-generate-signing-key --version 2 --scheme rsa3072
+idf.py secure-generate-signing-key --version 2 --scheme rsa3072 <file_name>
 \end{lstlisting}
    \textbf{Nota:} la chiave generata deve essere sempre mantenuta segreta.
 
@@ -975,13 +975,13 @@ esptool.py write_flash --encrypt
 
   \item Eseguire il comando:
 \begin{lstlisting}
-idf.py flash monitor
+idf.py encrypted-flash monitor
 \end{lstlisting}
-    per buildare e flashare la partition table e l'applicazione principale.
-    L'immagine verrà firmata utilizzando la chiave specificata nel passo \ref{secure_boot_key_path}.
-    \textbf{Nota:} il comando \texttt{idf.py flash} non include il bootloader
-    quando il Secure Boot è abilitato, quindi bisogna flasharlo separatamente come
-    descritto nel passo precedente.
+    per buildare, flashare e crittografare (per Flash Encryption) la partition table e
+    l'applicazione principale. L'immagine verrà firmata utilizzando la chiave specificata
+    nel passo \ref{secure_boot_key_path}. \textbf{Nota:} il comando
+    \texttt{idf.py encrypted-flash} non include il bootloader quando il Secure Boot è
+    abilitato, quindi bisogna flasharlo separatamente come descritto nel passo precedente.
 
   \item Riavviare il dispositivo per eseguire il bootloader firmato. Il bootloader
     abiliterà il Secure Boot sul chip, verificherà la firma dell'immagine
@@ -994,8 +994,182 @@ idf.py flash monitor
     sia valida prima di eseguirla.
 \end{enumerate}
 
-% \section{Analisi dei risultati}
-% \section{Conclusioni}
+\section{Analisi dei risultati}
+\subsection{Verifica dello stato di sicurezza}
+Controllare lo stato di attivazione delle features di sicurezza può essere
+fatto in due modi:
+\begin{itemize}
+  \item \textbf{Metodo hardware}: leggendo lo stato degli eFuse del dispositivo
+  \item \textbf{Metodo software}: controllando i log della console all'avvio del
+    dispositivo
+\end{itemize}
+
+\subsubsection{Controllo dello stato degli eFuse}
+È possibile usare lo strumento \texttt{espefuse.py} per leggere lo stato degli eFuse
+del dispositivo. Eseguendo il seguente comando (il dispositivo deve essere collegato):
+\begin{lstlisting}
+espefuse.py --port <PORT> summary
+\end{lstlisting}
+l'output dovrà essere simile al seguente, dove si può notare che la Flash Encryption
+è abilitata (con un numero dispari di bit impostati in \texttt{FLASH\_CRYPT\_CNT}) e
+il Secure Boot v2 è abilitato (con il bit \texttt{ABS\_DONE\_1} impostato a 1):
+
+\begin{lstlisting}[breaklines=false, basicstyle=\ttfamily\scriptsize]
+=== Run "summary" command ===
+EFUSE_NAME (Block) Description = [Value] [Readable/Writeable] (Hex Value)
+-----------------------------------------------------------------------------
+
+...
+
+Flash fuses:
+FLASH_CRYPT_CNT (BLOCK0)    Flash encryption is enabled  = 1 R/W (0b0000001)
+                            if this field has an odd
+                            number of bits set                             
+FLASH_CRYPT_CONFIG (BLOCK0) Flash encryption config      = 15 R/W (0xf)
+                            (key tweak bits)
+
+Security fuses:
+UART_DOWNLOAD_DIS (BLOCK0)  Disable UART download mode.  = False R/W (0b0)
+                            Valid for ESP32 V3 and 
+                            newer; only                                      
+ABS_DONE_0 (BLOCK0)         Secure boot V1 is enabled    = False R/W (0b0)
+                            for bootloader image
+ABS_DONE_1 (BLOCK0)         Secure boot V2 is enabled    = True R/W (0b1)
+                            for bootloader image
+DISABLE_DL_ENCRYPT (BLOCK0) Disable flash encryption in  = False R/W (0b0)
+                            UART bootloader
+DISABLE_DL_DECRYPT (BLOCK0) Disable flash decryption in  = True R/W (0b1)
+                            UART bootloader
+KEY_STATUS (BLOCK0)         Usage of efuse block 3       = False R/W (0b0)
+                            (reserved)
+SECURE_VERSION (BLOCK3)     Secure version for           = 0 R/W (0x00000000)
+                            anti-rollback
+BLOCK1 (BLOCK1)             Flash encryption key                              
+   = ???????????????????????????????????????????????????????????????? -/- 
+BLOCK2 (BLOCK2)             Security boot key                                 
+   = **************************************************************** R/- 
+BLOCK3 (BLOCK3)             Variable Block 3                                  
+   = 0000000000000000000000000000000000000000000000000000000000000000 R/W 
+
+...
+\end{lstlisting}
+
+\subsubsection{Controllo dei log della console}
+Dopo aver eseguito tutti i passaggi per attivare la Flash Encryption e il Secure Boot v2,
+all'avvio del dispositivo verranno mostrati dei log simili ai seguenti che
+confermano che entrambe le features di sicurezza sono attive:
+\begin{lstlisting}[breaklines=false, basicstyle=\ttfamily\scriptsize]
+...
+
+I (473) esp_image: Verifying image signature...
+I (475) secure_boot_v2: Verifying with RSA-PSS...
+I (483) secure_boot_v2: Signature verified successfully!
+I (496) boot: Loaded app from partition at offset 0x120000
+I (496) secure_boot_v2: enabling secure boot v2...
+I (496) secure_boot_v2: secure boot v2 is already enabled, continuing..
+I (502) boot: Checking flash encryption...
+I (506) flash_encrypt: flash encryption is enabled (3 plaintext flashes left)
+
+...
+\end{lstlisting}
+
+\subsection{Test di aggiornamento OTA}
+Per testare il corretto funzionamento dell'aggiornamento OTA sicuro basta
+incrementare il numero della versione nel file \texttt{version.txt} dopo
+aver modificato il codice (o anche senza modifiche) e ricompilare
+il progetto eseguendo il comando:
+\begin{lstlisting}
+idf.py build
+\end{lstlisting}
+Il compilatore include automaticamente il signature block nell'immagine
+del firmware e lo firma utilizzando la chiave specificata nel menuconfig.
+Una volta che la build è completata, il file binario del firmware aggiornato
+si trova in \texttt{build/esp32\_secure\_ota.bin} e deve essere copiato
+nella cartella \texttt{ota\_https\_server/firmware} per essere reso disponibile
+dal server HTTP. In alternativa si può creare un link simbolico. Quando il
+il dispositivo esegue il controllo periodico del server HTTP, scarica
+il nuovo firmware e se la versione è maggiore di quella corrente, procede
+con l'aggiornamento OTA e si riavvia per eseguire il nuovo firmware.
+L'output sarà simile al seguente:
+\begin{lstlisting}[breaklines=false, basicstyle=\ttfamily\scriptsize]
+...
+I (491592) APP: Hello, from firmware version: 22!
+I (492622) OTA: Attempting to download new firmware...
+I (492622) OTA: Running partition type 0 subtype 0 (offset 0x00020000)
+I (493212) OTA: New firmware version: 23
+I (493222) OTA: Running firmware version: 22
+I (493222) OTA: Writing to partition subtype 16 at offset 0x120000
+I (493222) OTA: esp_ota_begin succeeded
+I (493222) OTA: Updating firmware...
+I (514332) OTA: Connection closed
+I (514332) OTA: Total Write binary data length: 921600
+...
+I (515032) esp_image: Verifying image signature...
+I (515032) secure_boot_v2: Take trusted digest key(s) from eFuse block(s)
+I (515032) secure_boot_v2: #0 app key digest == #0 trusted key digest
+I (515042) secure_boot_v2: Verifying with RSA-PSS...
+I (515102) secure_boot_v2_rsa: Signature verified successfully!
+I (515172) OTA: Prepare to restart system!
+I (515172) OTA: Waiting for network stack to clean up...
+...
+
+\end{lstlisting}
+
+\noindent
+Al riavvio, il bootloader verifica la firma digitale della nuova immagine
+crittografata e, se valida, avvia l'applicazione aggiornata.
+L'output sarà simile al seguente:
+
+\begin{lstlisting}[breaklines=false, basicstyle=\ttfamily\scriptsize]
+...
+I (473) esp_image: Verifying image signature...
+I (475) secure_boot_v2: Verifying with RSA-PSS...
+I (483) secure_boot_v2: Signature verified successfully!
+I (496) boot: Loaded app from partition at offset 0x120000
+...
+I (1239) WIFI: WIFI station initialization complete
+I (1239) WIFI: Connecting to AP
+I (2409) WIFI: Station IP: 192.168.1.1
+I (2409) WIFI: Connected to AP
+I (2409) OTA: Starting new firmware download task
+I (2409) OTA: Attempting to download new firmware...
+I (2419) OTA: Running partition type 0 subtype 16 (offset 0x00120000)
+I (2439) APP: Hello, from firmware version: 23!
+I (2739) OTA: New firmware version: 23
+I (2739) OTA: Running firmware version: 23
+W (2739) OTA: Current running version is the same as a new.
+              The update will not be made.
+I (2739) OTA: No new firmware version available. Retrying in 30s...
+...
+\end{lstlisting}
+
+\section{Conclusioni}
+Il progetto ha portato alla realizzazione e alla validazione di un sistema embedded
+basato su ESP32 capace di eseguire aggiornamenti firmware da remoto (OTA) in modo
+sicuro.
+
+\vspace{1em}
+\noindent
+Le principali considerazioni riguardo le funzionalità implementate sono:
+
+\begin{itemize}
+  \item \textbf{Sicurezza Hardware}: L'abilitazione del Secure Boot v2 e della
+    Flash Encryption garantiscono una sicurezza contro gli attacchi fisici
+    o a tentativi di esecuzione di codice non autorizzato.
+
+  \item \textbf{Affidabilità dell'aggiornamento}: L'implementazione del meccanismo di
+    rollback garantisce la continuità di servizio. Anche in caso di
+    firmware corrotto o malfunzionante, il sistema è in grado di rilevare il problema
+    e tornare automaticamente alla versione precedente, evitando che il dispositivo
+    diventi inutilizzabile ("bricked").
+
+  \item \textbf{Gestione degli eFuse}: L'aspetto più complesso dell'implementazione
+    è l'irreversibilità di alcune operazioni. La gestione delle chiavi
+    crittografiche e la configurazione degli eFuse richiedono particolare
+    attenzione, perchè la perdita della chiave privata o un errore nella
+    configurazione delle features di sicurezza possono rendere il chip
+    permanentemente inutilizzabile.
+\end{itemize}
 
 \nocite{*}
 \printbibliography[
