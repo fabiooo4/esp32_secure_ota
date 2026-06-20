@@ -19,6 +19,8 @@ documentation/*.bbl*
 documentation/*.blg
 documentation/*.bcf*
 documentation/*.run.xml
+documentation/*.nav
+documentation/*.snm
 
 # Rust
 target/
