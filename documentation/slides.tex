@@ -1,0 +1,157 @@
+\documentclass{beamer}
+
+\usepackage[italian]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{makecell}
+\usepackage{xcolor}
+
+\usetheme{Madrid}
+
+\title[Secure OTA su ESP32]
+{Aggiornamenti OTA con Secure-Boot e Flash encryption sul dispositivo embedded ESP32}
+
+\author[Irimie Fabio] {
+  Irimie Fabio\texorpdfstring{\\}{, }
+  Relatore: Prof. Fummi Franco
+}
+
+\institute[UniVr] {
+  Università degli Studi di Verona\texorpdfstring{\\}{ - }
+  Dipartimento di Informatica
+}
+
+\date
+{Anno accademico 2023/2024}
+
+\begin{document}
+
+\frame{\titlepage}
+
+\begin{frame}
+\frametitle{Indice}
+\tableofcontents
+\end{frame}
+
+\section{Obiettivo}
+\begin{frame}
+\frametitle{Obiettivo}
+\begin{itemize}
+  \item Proteggere il dispositivo da accessi non autorizzati alla memoria e dalla
+    manomissione software tramite le seguenti funzionalità:
+
+    \begin{itemize}
+      \item \textbf{Flash Encryption:} Protegge i dati memorizzati nella memoria flash
+        del dispositivo.
+      \item \textbf{Secure Boot:} Impedisce l'esecuzione di firmware non autorizzato
+      \item \textbf{Secure OTA (Over The Air):} Permette di aggiornare il firmware da
+        remoto garantendo che il nuovo firmware sia autentico e non compromesso.
+    \end{itemize}
+\end{itemize}
+\end{frame}
+
+\section{Aggiornamenti OTA (Over The Air)}
+\begin{frame}
+\frametitle{Aggiornamenti OTA (Over The Air)} 
+
+Gli aggiornamenti OTA permettono di aggiornare il firmware senza dover collegare il
+dispositivo ad un computer.
+
+\vspace{1em}
+\noindent
+
+Ci sono due modalità principali di aggiornamento e si distinguono in base alla
+vulnerabilità del dispositivo.
+\end{frame}
+
+\subsection{Modalità di aggiornamento}
+\begin{frame}
+\frametitle{Modalità di aggiornamento}
+\begin{itemize}
+  \item \textbf{Modalità sicura:} Garantisce l'operabilità del dispositivo anche in
+    caso di guasto durante l'aggiornamento. L'unico tipo di partizione che supporta
+    questa modalità è:
+    \begin{itemize}
+      \item Application
+    \end{itemize}
+  \item \textbf{Modalità non sicura:} L'aggiornamento è vulnerabile a guasti e il
+    dispositivo potrebbe non essere più operabile. Il tipo di partizioni che supportano
+    questa modalità sono:
+    \begin{itemize}
+      \item Bootloader
+      \item Partition Table
+      \item Partizioni di tipo Data (come NVS, FAT, etc.)
+    \end{itemize}
+\end{itemize}
+\end{frame}
+
+\subsection{App Rollback}
+\begin{frame}
+\frametitle{App Rollback}
+L'App Rollback permette di tornare ad una versione precedente del firmware se la nuova
+versione non funziona correttamente per garantire la funzionalità del dispositivo.
+La corretta funzionalità del dispositivo viene verificata tramite una funzione
+eseguita dopo l'aggiornamento del firmware. 
+
+\begin{itemize}
+  \item Se l'app funziona correttamente, viene impostato lo stato dell'app a
+    \texttt{ESP\_OTA\_IMG\_VALID}
+
+  \item Se l'app non funziona correttamente, il dispositivo esegue il rollback alla versione
+    precedente e imposta lo stato dell'app a \texttt{ESP\_OTA\_IMG\_INVALID}
+
+  \item Se l’impostazione \texttt{CONFIG\_BOOTLOADER\_APP\_ROLLBACK\_ENABLE} è
+    abilitata e viene effettuato un reset, allora viene effettuato un rollback senza
+    chiamare nessuna funzione nell'applicazione.
+\end{itemize}
+\end{frame}
+
+
+\section{eFuse}
+\begin{frame}
+  \frametitle{eFuse}
+  Gli eFuse sono memorie non volatili che possono essere programmate una sola volta.
+  Sono organizzati in 4 blocchi da 256 bit:
+  \begin{itemize}
+    \item \textbf{Blocco 0:} Riservato per valori di sistema
+    \item \textbf{Blocco 1:} Chiave per Flash Encryption
+    \item \textbf{Blocco 2:} Chiave per Secure Boot
+    \item \textbf{Blocco 3:} Riservato per valori dell'utente
+  \end{itemize}
+\end{frame}
+
+\section{Secure Boot}
+\begin{frame}
+\frametitle{Secure Boot}
+Il Secure Boot verifica che ogni firmware eseguito sul dispositivo sia stato firmato
+correttamente. Per la firma viene usata la crittografia assimmetrica:
+\begin{itemize}
+  \item \textbf{Chiave privata:} Mantenuta segreta e usata per firmare il firmware
+  \item \textbf{Chiave pubblica:} Inserita negli eFuse del dispositivo per verificare
+    l'autenticità del firmware
+\end{itemize}
+La firma è una struttura detta Signature Block (4Kb) che viene inserita alla fine
+del firmware e viene calcolata su tutti i byte dell'immagine.
+\end{frame}
+
+\subsection{Processo di avvio con Secure Boot}
+\begin{frame}
+\frametitle{Processo di avvio con Secure Boot}
+\begin{enumerate}
+  \item Il first stage bootloader, presente in ROM, verifica la firma del second stage
+    bootloader con la chiave presente negli eFuse.
+  \item Se la firma è valida, il second stage bootloader viene eseguito,
+    altrimenti il boot viene interrotto.
+  \item Il second stage bootloader verifica la firma del firmware con la chiave
+    presente negli eFuse.
+  \item Se la firma è valida, il firmware viene eseguito,
+    altrimenti si cerca un'altra immagine valida finchè non viene trovata o si
+    esauriscono le immagini.
+\end{enumerate}
+\end{frame}
+
+\section{Flash Encryption}
+\begin{frame}
+  
+\end{frame}
+
+\end{document}
