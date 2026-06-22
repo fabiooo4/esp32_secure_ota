@@ -53,8 +53,11 @@
 \begin{frame}
 \frametitle{Aggiornamenti OTA (Over The Air)} 
 
-Gli aggiornamenti OTA permettono di aggiornare il firmware senza dover collegare il
-dispositivo ad un computer.
+Gli aggiornamenti OTA permettono di:
+\begin{itemize}
+  \item Aggiornare il firmware senza dover collegare il dispositivo ad un computer.
+  \item Verificare il corretto funzionamento del nuovo firmware
+\end{itemize}
 
 \vspace{1em}
 \noindent
@@ -93,8 +96,8 @@ Vengono configurate le seguenti partizioni:
   \item \texttt{ota\_1}
   \item \texttt{ota\_data}: contiene informazioni sullo stato di boot
 \end{itemize}
-Durante l'aggiornamento, il nuovo firmware viene scritto nella partizione \texttt{ota}
-non attiva. Se l'aggiornamento è completato con successo, la partizione \texttt{ota\_data}
+Il nuovo firmware viene scritto nella partizione \texttt{ota} non attiva.
+Se l'aggiornamento è avvenuto con successo, la partizione \texttt{ota\_data}
 viene aggiornata per indicare che la partizione \texttt{ota} appena scritta deve essere
 utilizzata al boot successivo.
 
@@ -120,8 +123,10 @@ Se l'operazione di copia viene interrotta potrebbero verificarsi problemi di boo
 \subsection{App Rollback}
 \begin{frame}
 \frametitle{App Rollback}
-L'App Rollback permette di tornare ad una versione precedente del firmware se la nuova
-versione non funziona correttamente per garantire la funzionalità del dispositivo.
+L'App Rollback permette di tornare ad una versione precedente del firmware per
+garantire la funzionalità del dispositivo se la nuova
+versione non funziona correttamente .
+
 Il corretto funzionamento del dispositivo viene verificato tramite una funzione
 eseguita dopo l'aggiornamento del firmware. 
 
@@ -132,9 +137,9 @@ eseguita dopo l'aggiornamento del firmware.
   \item Se l'app non funziona correttamente, il dispositivo esegue il rollback alla versione
     precedente e imposta lo stato dell'app a \texttt{ESP\_OTA\_IMG\_INVALID}
 
-  \item Se l’impostazione \texttt{CONFIG\_BOOTLOADER\_APP\_ROLLBACK\_ENABLE} è
-    abilitata e viene effettuato un reset, allora viene effettuato un rollback senza
-    chiamare nessuna funzione nell'applicazione.
+  % \item Se l’impostazione \texttt{CONFIG\_BOOTLOADER\_APP\_ROLLBACK\_ENABLE} è
+  %   abilitata e viene effettuato un reset, allora viene effettuato un rollback senza
+  %   chiamare nessuna funzione nell'applicazione.
 \end{itemize}
 \end{frame}
 
