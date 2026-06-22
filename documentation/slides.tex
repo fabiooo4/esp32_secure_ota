@@ -84,12 +84,45 @@ vulnerabilità del dispositivo.
 \end{itemize}
 \end{frame}
 
+\subsubsection{Aggiornamento in modalità sicura}
+\begin{frame}
+\frametitle{Aggiornamento in modalità sicura}
+Vengono configurate le seguenti partizioni:
+\begin{itemize}
+  \item \texttt{ota\_0}
+  \item \texttt{ota\_1}
+  \item \texttt{ota\_data}: contiene informazioni sullo stato di boot
+\end{itemize}
+Durante l'aggiornamento, il nuovo firmware viene scritto nella partizione \texttt{ota}
+non attiva. Se l'aggiornamento è completato con successo, la partizione \texttt{ota\_data}
+viene aggiornata per indicare che la partizione \texttt{ota} appena scritta deve essere
+utilizzata al boot successivo.
+
+\vspace{1em}
+\noindent
+Se la partizione \texttt{ota\_data} non contiene
+alcun dato il dispositivo esegue il boot dalla partizione \texttt{factory}.
+\end{frame}
+
+\subsubsection{Aggiornamento in modalità non sicura}
+\begin{frame}
+\frametitle{Aggiornamento in modalità non sicura}
+Una partizione temporanea riceve
+i dati della nuova immagine e, una volta completato il trasferimento, l'immagine viene
+copiata nella partizione di destinazione.
+
+\vspace{1em}
+\noindent
+
+Se l'operazione di copia viene interrotta potrebbero verificarsi problemi di boot.
+\end{frame}
+
 \subsection{App Rollback}
 \begin{frame}
 \frametitle{App Rollback}
 L'App Rollback permette di tornare ad una versione precedente del firmware se la nuova
 versione non funziona correttamente per garantire la funzionalità del dispositivo.
-La corretta funzionalità del dispositivo viene verificata tramite una funzione
+Il corretto funzionamento del dispositivo viene verificato tramite una funzione
 eseguita dopo l'aggiornamento del firmware. 
 
 \begin{itemize}
@@ -151,7 +184,108 @@ del firmware e viene calcolata su tutti i byte dell'immagine.
 
 \section{Flash Encryption}
 \begin{frame}
-  
+\frametitle{Flash Encryption}
+La Flash Encryption permette di crittografare la memoria flash del dispositivo. 
+Una volta attivata, tutte le seguenti partizioni vengono crittografate:
+\begin{itemize}
+  \item Second stage bootloader
+  \item Partition table
+  \item Partizione OTA Data
+  \item Partizioni di tipo Application
+\end{itemize}
+Altre partizioni possono essere crittografate condizionalmente:
+\begin{itemize}
+  \item Partizioni con la flag \texttt{encrypted}
+  \item Il hash del bootloader se il Secure Boot è abilitato
+\end{itemize}
+\end{frame}
+
+\subsection{Modalità di Flash Encryption}
+\begin{frame}
+\frametitle{Modalità di Flash Encryption}
+Esistono due modalità di funzionamento della Flash Encryption:
+\begin{itemize}
+  \item \textbf{Modalità sviluppo:} Permette di flashare nuove immagini non crittografate
+    sul dispositivo e il bootloader le crittografa utilizzando la chiave memorizzata
+    negli eFuse.
+
+  \item \textbf{Modalità rilascio:} Non è possibile flashare nuove immagini non crittografate
+    sul dispositivo, ma è necessario flashare immagini già crittografate.
+\end{itemize}
+\end{frame}
+
+\subsection{eFuse rilevanti}
+\begin{frame}
+\frametitle{eFuse rilevanti}
+I seguenti \texttt{eFuse} sono rilevanti per la Flash Encryption:
+\begin{itemize}
+  \item \texttt{flash\_encryption}: contiene la chiave di
+    crittografia
+
+  \item \texttt{DISABLE\_DL\_ENCRYPT} (1 bit): se abilitato disattiva la flash encryption
+    mentre il dispositivo viene eseguito in modalità Firmware Download
+
+  \item \texttt{DISABLE\_DL\_DECRYPT} (1 bit): se abilitato disattiva la flash decryption
+    mentre il dispositivo viene eseguito in modalità UART Firmware Download
+
+  \item \texttt{FLASH\_CRYPT\_CNT} (7 bit): indica se
+    i contenuti della memoria flash sono stati crittografati.
+    \begin{itemize}
+      \item Se un numero dispari di bit sono impostati a 1, i contenuti
+        della memoria flash sono crittografati e devono essere decrittografati durante
+        la lettura.
+
+      \item Se un numero pari di bit sono impostati a 1, i contenuti della
+        memoria flash non sono crittografati.
+    \end{itemize}
+\end{itemize}
+\end{frame}
+
+\subsection{Processo di avvio con Flash Encryption}
+\begin{frame}[allowframebreaks]
+\frametitle{Processo di avvio con Flash Encryption}
+Supponendo che i valori degli eFuse siano nello stato iniziale, il processo di avvio
+con Flash Encryption è il seguente:
+\begin{enumerate}
+  \item Al primo avvio, la memoria flash non è crittografata e il first stage bootloader
+    esegue il second stage bootloader.
+
+  \item Il bootloader controlla il valore dell'eFuse
+    \texttt{FLASH\_CRYPT\_CNT}. Siccome tutti i bit sono a 0 (stato di default),
+    cioè un numero pari di bit impostati, il bootloader configura e attiva il
+    \textit{flash encryption block}.
+
+    \item Il bootloader utilizza la chiave memorizzata nell'eFuse
+      \texttt{flash\_encryption}. Se la chiave non è presente ne genera una nuova e la
+      scrive nell'eFuse.
+
+  \item Il \textit{flash encryption block} crittografa tutti i dati nella memoria flash.
+    L'intero processo avviene via hardware e la chiave non è accessibile
+    dal software.
+
+  \item Il bootloader imposta il primo bit disponibile di \\
+    \texttt{FLASH\_CRYPT\_CNT} a 1 per indicare che i dati nella memoria flash sono
+    crittografati. 
+
+  \item In base alla modalità:
+  \begin{itemize}
+    \item In modalità \texttt{development}, il second stage bootloader abilita soltanto
+      gli eFuse \texttt{DISABLE\_DL\_ENCRYPT} e \texttt{DISABLE\_DL\_CACHE} per
+      permettere al bootloader in modalità Firmware Download di flashare binari crittografati.
+      Inoltre i bit dell'eFuse \\ \texttt{FLASH\_CRYPT\_CNT} non sono protetti in scrittura.
+
+    \item In modalità \texttt{release}, il second stage abilita i bit degli eFuse \\
+      \texttt{DISABLE\_DL\_ENCRYPT}, \texttt{DISABLE\_DL\_DECRYPT} e \texttt{DISABLE\_DL\_CACHE}
+      per impedire che il bootloader decrittografi i dati durante la modalità Firmware
+      Download. Inoltre i bit dell'eFuse \texttt{FLASH\_CRYPT\_CNT} sono protetti in
+      scrittura.
+  \end{itemize}
+
+
+  \item Il dispositivo viene riavviato per eseguire l'immagine crittografata. Il second
+    stage bootloader chiama il \textit{flash decryption block} per decrittografare i dati
+    della memoria flash e caricare i contenuti decrittografati in memoria.
+\end{enumerate}
 \end{frame}
 
 \end{document}

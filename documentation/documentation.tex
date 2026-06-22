@@ -500,7 +500,7 @@ I seguenti \texttt{eFuse} sono rilevanti per la Flash Encryption:
       \item Se un numero pari di bit sono impostati a 1, indica che i contenuti della
         memoria flash non sono crittografati.
     \end{itemize}
-    Ogni aggiornamento della memoria flash con dati non crittografati e con l'esecuzione
+    Ad ogni aggiornamento della memoria flash con dati non crittografati e con l'esecuzione
     della crittografia il bit più significativo di \texttt{FLASH\_CRYPT\_CNT} viene
     impostato a 1.
 \end{itemize}
@@ -544,7 +544,7 @@ bootloader sia stato compilato per supportare la flash encryption, il processo d
     Inoltre i bit dell'eFuse \\ \texttt{FLASH\_CRYPT\_CNT} non sono protetti in scrittura.
 
   \item In modalità \texttt{release}, il second stage abilita i bit degli eFuse \\
-    \texttt{DISABLE\_DL\_ENCRYPT}, \texttt{DISABLE\_DL\_ENCRYPT} e \texttt{DISABLE\_DL\_CACHE}
+    \texttt{DISABLE\_DL\_ENCRYPT}, \texttt{DISABLE\_DL\_DECRYPT} e \texttt{DISABLE\_DL\_CACHE}
     per impedire che il bootloader decrittografi i dati durante la modalità Firmware
     Download. Inoltre i bit dell'eFuse \texttt{FLASH\_CRYPT\_CNT} sono protetti in
     scrittura.
